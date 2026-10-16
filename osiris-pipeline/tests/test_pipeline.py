@@ -90,3 +90,19 @@ def test_store_rejects_malformed_result() -> None:
     p2.database_url = None
     assert p2.store({"item": {"content_hash": "x"}, "topics": "str",
                      "entities": {"a": 1}}) is None
+
+
+def test_process_one_propagates_source_id() -> None:
+    import json
+
+    p = ProcessingPipeline.__new__(ProcessingPipeline)
+    p._nlp = False
+    p._embedder = False
+    p.embedding_model_name = None
+    sid = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
+    msg = {"plugin_id": "rss", "source_id": sid, "item": {"raw_content": "x"}}
+    assert p.process_one(json.dumps(msg))["item"]["source_id"] == sid
+    msg["source_id"] = "bozuk"
+    assert p.process_one(json.dumps(msg))["item"]["source_id"] is None
+    del msg["source_id"]  # eski biçim mesaj: alan yok → NULL
+    assert p.process_one(json.dumps(msg))["item"]["source_id"] is None

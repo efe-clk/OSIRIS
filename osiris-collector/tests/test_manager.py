@@ -279,3 +279,23 @@ def test_schedule_unknown_plugin_rejected() -> None:
     mgr = make_manager()
     with pytest.raises(KeyError):
         mgr.schedule("yok", "*/5 * * * *", {})
+
+
+def test_source_id_carried_in_queue_message() -> None:
+    import json
+
+    sid = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
+    mgr = make_manager()
+    mgr.plugins["ok"] = OkPlugin()
+    mgr.run_collection("ok", {"source_id": sid})
+    msg = json.loads(mgr.redis.rpush.call_args[0][1])
+    assert msg["source_id"] == sid.lower()
+
+
+def test_invalid_source_id_dropped_from_queue_message() -> None:
+    import json
+
+    mgr = make_manager()
+    mgr.plugins["ok"] = OkPlugin()
+    mgr.run_collection("ok", {"source_id": "x'; DROP TABLE items;--"})
+    assert json.loads(mgr.redis.rpush.call_args[0][1])["source_id"] is None

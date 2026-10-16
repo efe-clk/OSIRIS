@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _MAX_QUEUE_ITEM_BYTES = 512_000
 _CRON_PART_RE = re.compile(r"^[\d,/*-]+$")
 _PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
 class CollectorManager:
@@ -137,11 +138,15 @@ class CollectorManager:
 
         if result.success:
             enqueued = 0
+            # Kaynak kimliği mesaja taşınır (items.source_id; KVKK saklama süresi buna bağlı)
+            raw_sid = config.get("source_id")
+            source_id = str(raw_sid).lower() if isinstance(raw_sid, str) and _UUID_RE.match(raw_sid) else None
             for item in result.items:
                 try:
                     payload = json.dumps(
                         {
                             "plugin_id": plugin_id,
+                            "source_id": source_id,
                             "item": item.model_dump(),
                             "collected_at": time.time(),
                         },

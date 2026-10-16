@@ -35,6 +35,7 @@ _CRYPTO_RE = re.compile(r"\b(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b|\b0x[a-fA-F0-9]
 _CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,7}\b", re.IGNORECASE)
 
 _MAX_CONTENT_CHARS = 200_000
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _VALID_ENTITY_TYPES = {
     "person", "org", "location", "ip", "domain", "email",
     "phone", "crypto_address", "hash", "username", "cve", "custom",
@@ -103,10 +104,15 @@ class ProcessingPipeline:
         content_hash = hashlib.sha256(cleaned.encode()).hexdigest()
         embedding = self.generate_embedding(cleaned)
 
+        # Mesaj üst düzeyindeki source_id öncelikli; yalnızca geçerli UUID kabul edilir
+        sid = payload.get("source_id") or item.get("source_id")
+        source_id = sid if isinstance(sid, str) and _UUID_RE.match(sid) else None
+
         return {
             "plugin_id": str(plugin_id),
             "item": {
                 **item,
+                "source_id": source_id,
                 "cleaned_content": cleaned,
                 "language": language,
                 "content_hash": content_hash,
@@ -364,7 +370,7 @@ class ProcessingPipeline:
                         (source_id, raw_content, cleaned_content, url, title,
                          language, collected_at, published_at, content_hash, metadata, tags, embedding)
                     VALUES
-                        (NULLIF(%s,'')::uuid, %s, %s, %s, %s,
+                        ((SELECT id FROM sources WHERE id = NULLIF(%s,'')::uuid), %s, %s, %s, %s,
                          %s, NOW(), NULLIF(%s,'')::timestamptz, %s, %s::jsonb, %s, %s::vector)
                     ON CONFLICT (content_hash) DO NOTHING
                     RETURNING id::text
@@ -388,7 +394,7 @@ class ProcessingPipeline:
                 (source_id, raw_content, cleaned_content, url, title,
                  language, collected_at, published_at, content_hash, metadata, tags)
             VALUES
-                (NULLIF(%s,'')::uuid, %s, %s, %s, %s,
+                ((SELECT id FROM sources WHERE id = NULLIF(%s,'')::uuid), %s, %s, %s, %s,
                  %s, NOW(), NULLIF(%s,'')::timestamptz, %s, %s::jsonb, %s)
             ON CONFLICT (content_hash) DO NOTHING
             RETURNING id::text
