@@ -24,4 +24,5 @@ testpaths = [
     "plugins/username-search/tests",
     "tests/golden",
     "tests/integration",
+    "tests/contract",
 ]

@@ -1,0 +1,3 @@
+# Kara kutu API sözleşme testleri — yalnızca bunlar (uygulama kodu gerekmez)
+pytest>=8
+httpx>=0.27

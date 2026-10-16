@@ -51,6 +51,9 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U osiris" --health-interval 5s
           --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
     env:
       OSIRIS_TEST_DATABASE_URL: postgresql://osiris:osiris@localhost:5432/osiris_test
       PGPASSWORD: osiris
@@ -68,9 +71,25 @@ jobs:
           done
       - name: Bağımlılıkları kur
         run: |
-          pip install -e ./osiris-sdk -e ./osiris-pipeline pytest
+          pip install -e ./osiris-sdk -e ./osiris-collector -e ./osiris-pipeline \
+            -e ./osiris-graph -e ./osiris-query -e ./osiris-alert -e ./osiris-report \
+            -e ./osiris-api uvicorn -r tests/contract/requirements.txt
+          for req in plugins/*/requirements.txt; do pip install -r "$req"; done
       - name: Entegrasyon testleri
         run: pytest -q tests/integration
+      - name: Sözleşme (kara kutu) testleri — gerçek API'ye karşı
+        env:
+          OSIRIS_API_KEY: ci-contract-admin-key-0123456789abcdef
+          OSIRIS_JWT_SECRET: ci-contract-jwt-secret-0123456789abcdef
+          OSIRIS_DATABASE_URL: postgresql://osiris:osiris@localhost:5432/osiris_test
+          OSIRIS_REDIS_URL: redis://localhost:6379/0
+          OSIRIS_BASE_URL: http://127.0.0.1:8000
+          OSIRIS_CONTRACT_API_KEY: ci-contract-admin-key-0123456789abcdef
+          OSIRIS_CONTRACT_DESTRUCTIVE: "1"
+        run: |
+          uvicorn osiris_api.main:app --host 127.0.0.1 --port 8000 > api.log 2>&1 &
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
+          pytest -q tests/contract || { cat api.log; exit 1; }
 
   lint:
     name: Lint (ruff)
