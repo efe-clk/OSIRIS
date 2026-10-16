@@ -19,7 +19,7 @@ pip install -e ./osiris-report
 pip install -e ./osiris-query
 pip install -e ./osiris-api
 pip install -e ./osiris-cli
-pip install pytest pytest-cov httpx
+pip install pytest pytest-cov httpx ruff
 
 # Run tests (80% coverage gate)
 pytest -q

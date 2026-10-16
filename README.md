@@ -41,7 +41,7 @@ The system is designed to run 24/7 on a VDS (Virtual Dedicated Server). All comp
 │           │                                                      │
 │    ┌──────▼──────────────────────────────────────────────┐      │
 │    │              Plugin Collection                       │      │
-│    │  [WWW] [Tor] [I2P] [RSS] [API] [P2P] [Shodan] ...  │      │
+│    │  [WWW] [Tor] [I2P] [RSS] [API] [IRC] [Shodan] ...  │      │
 │    └─────────────────────────────────────────────────────┘      │
 └─────────────────────────────────────────────────────────────────┘
 ```

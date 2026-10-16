@@ -6,7 +6,6 @@
 > **O**pen **S**ource **I**ntelligence **R**esearch & **I**nformation **S**ystem
 > Version: 0.5 — Architecture & Operations Document
 > Status: Production pilot (self-hosted reference deployment live)
-> Supersedes: `docs/OSIRIS_Technical_Document.md` (original design draft)
 
 ---
 
@@ -114,7 +113,7 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 │           │                                                      │
 │    ┌──────▼──────────────────────────────────────────────┐      │
 │    │              Plugin Collection (11 plugins)          │      │
-│    │  [WWW] [Tor] [I2P] [RSS] [API] [P2P] [Shodan] ...  │      │
+│    │  [WWW] [Tor] [I2P] [RSS] [API] [IRC] [Shodan] ...  │      │
 │    └─────────────────────────────────────────────────────┘      │
 │                                                                  │
 │    ┌───────────────┐    ┌───────────────┐    ┌──────────────┐   │
@@ -130,7 +129,7 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 | Layer | Role | Technology |
 |-------|------|-----------|
 | **Interface** | User interaction | CLI (Click), Web UI (React), REST (FastAPI) |
-| **API Gateway** | Connects all components, auth + validation | Python/FastAPI (C++ core covers scheduling) |
+| **API Gateway** | Connects all components, auth + validation | Python/FastAPI (scheduling: APScheduler, Python — `osiris-collector`) |
 | **Core Engine** | Task management, plugin lifecycle | C++20 |
 | **Collector Manager** | Plugin orchestration, queue delivery | Python |
 | **Processing Pipeline** | Clean, enrich, deduplicate, store | Python |
@@ -235,17 +234,6 @@ Stages: clean → language → NER → classify → embed (optional) → dedup �
 ### 5.8 REST API (`osiris-api`)
 
 Full endpoint reference: [API.md](API.md).
-| Endpoint | Method | Min. role |
-|----------|--------|-----------|
-| `/health` | GET | open |
-| `/auth/token` | POST | operator key (body) |
-| `/auth/keys` | POST/GET | admin |
-| `/auth/keys/{id}` | DELETE | admin |
-| `/plugins` | GET | viewer |
-| `/search`, `/search/entity` | POST | viewer |
-| `/collect` | POST | analyst |
-| `/graph` | GET | viewer |
-| `/graph/relation` | POST | analyst |
 
 Auth: `X-API-Key` (operator) or per-user DB keys or `Authorization: Bearer <JWT>`. CORS allowlist, Pydantic limits, no internal details in errors, best-effort audit writes.
 
@@ -468,7 +456,7 @@ Security obligations: `assert_safe_url` for URLs, `sanitize_*` for hosts/domains
 `osiris status|plugins|collect` — clean exit codes (0 ok, 1 failure, 2 bad input).
 
 ### 13.2 REST API
-Primary interface (see §5.8 endpoint table). Machine clients use API keys or JWTs.
+Primary interface (endpoint reference: [API.md](API.md)). Machine clients use API keys or JWTs.
 
 ### 13.3 Web UI
 React + TypeScript + Tailwind: Dashboard, Sources, Search. API-wired search and source health views are next; static build served by Nginx.

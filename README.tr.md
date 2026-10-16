@@ -41,7 +41,7 @@ Sistem, bir VDS üzerinde 7/24 kesintisiz çalışacak şekilde tasarlanmıştı
 │           │                                                      │
 │    ┌──────▼──────────────────────────────────────────────┐      │
 │    │              Plugin Koleksiyonu (11 plugin)          │      │
-│    │  [WWW] [Tor] [I2P] [RSS] [API] [P2P] [Shodan] ...  │      │
+│    │  [WWW] [Tor] [I2P] [RSS] [API] [IRC] [Shodan] ...  │      │
 │    └─────────────────────────────────────────────────────┘      │
 └─────────────────────────────────────────────────────────────────┘
 ```

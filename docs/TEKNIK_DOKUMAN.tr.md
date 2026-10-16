@@ -6,7 +6,6 @@
 > **O**pen **S**ource **I**ntelligence **R**esearch & **I**nformation **S**ystem
 > Sürüm: 0.5 — Mimari & Operasyon Dokümanı
 > Durum: Üretim pilotu (self-host referans kurulum canlıda)
-> Önceki: `docs/OSIRIS_Technical_Document.md` (ilk tasarım taslağı, yerini almıştır)
 
 ---
 
@@ -82,7 +81,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 - Çıktı dizin kilidi (path traversal yok), boyut sınırları
 
 ### 2.7 Otomasyon
-- N8N iş akışı (`X-API-Key` başlıklı search + collect düğümleri, zaman aşJRımlı)
+- N8N iş akışı (`X-API-Key` başlıklı search + collect düğümleri, zaman aşımlı)
 - Kayıtlı sorgu + uyarı işleyicilerle tetikleyici-eylem (e-posta/Telegram/webhook)
 - Anomali tespiti (kayan z-skor tabanları, ısınma dönemi, sessize alma)
 
@@ -114,7 +113,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 │           │                                                      │
 │    ┌──────▼──────────────────────────────────────────────┐      │
 │    │              Plugin Koleksiyonu (11 plugin)          │      │
-│    │  [WWW] [Tor] [I2P] [RSS] [API] [P2P] [Shodan] ...  │      │
+│    │  [WWW] [Tor] [I2P] [RSS] [API] [IRC] [Shodan] ...  │      │
 │    └─────────────────────────────────────────────────────┘      │
 │                                                                  │
 │    ┌───────────────┐    ┌───────────────┐    ┌──────────────┐   │
@@ -130,7 +129,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 | Katman | Rol | Teknoloji |
 |--------|-----|-----------|
 | **Arayüz** | Kullanıcı etkileşimi | CLI (Click), Web UI (React), REST (FastAPI) |
-| **API Gateway** | Bileşenleri bağlar, auth + doğrulama | Python/FastAPI (zamanlama C++ core'da) |
+| **API Gateway** | Bileşenleri bağlar, auth + doğrulama | Python/FastAPI (zamanlama: APScheduler, Python — `osiris-collector`) |
 | **Core Engine** | Görev yönetimi, plugin yaşam döngüsü | C++20 |
 | **Collector Manager** | Plugin orkestrasyonu, kuyruk iletimi | Python |
 | **Processing Pipeline** | Temizle, zenginleştir, tekilleştir, depola | Python |
@@ -193,7 +192,7 @@ Docker, Docker Compose (profiller: varsayılan altyapı, `api`, `ui`, `full`), N
 ### 5.1 Core Engine (`osiris-core`)
 - **Dil:** C++20, `-Wall -Wextra -Wpedantic`, sıfır uyarı
 - **Rol:** merkezi koordinatör
-- **Gerçekleşen:** plugin kayıt/başlat/durdur, görev listesi, atomik durdurma bayraklı 1 sn zamanlayıcı döngüsü, sürümlü CLI
+- **Gerçekleşen:** plugin kayıt/başlat/durdur, görev listesi, atomik durdurma bayraklı (`stop_scheduler`) 1 sn zamanlayıcı döngüsü, sürümlü CLI
 - **Ertelenen:** tam cron ayrıştırma, IPC sunucusu (REST `osiris-api`'de)
 
 ### 5.2 Collector Manager (`osiris-collector`)
@@ -230,17 +229,6 @@ Aşamalar: temizle → dil → NER → sınıflandır → embed (opsiyonel) → 
 ### 5.8 REST API (`osiris-api`)
 
 Tam uç başvurusu: [API.tr.md](API.tr.md).
-| Uç | Yöntem | Min. rol |
-|----|--------|----------|
-| `/health` | GET | açık |
-| `/auth/token` | POST | operatör anahtarı (gövde) |
-| `/auth/keys` | POST/GET | admin |
-| `/auth/keys/{id}` | DELETE | admin |
-| `/plugins` | GET | viewer |
-| `/search`, `/search/entity` | POST | viewer |
-| `/collect` | POST | analyst |
-| `/graph` | GET | viewer |
-| `/graph/relation` | POST | analyst |
 
 Auth: `X-API-Key` (operatör) veya kullanıcı DB anahtarları veya `Authorization: Bearer <JWT>`. CORS allowlist, Pydantic limitleri, hatalarda iç detay yok, best-effort denetim yazımı.
 
@@ -463,7 +451,7 @@ Güvenlik yükümlülükleri: URL'lerde `assert_safe_url`, host/domain/IRC jeton
 `osiris status|plugins|collect` — temiz çıkış kodları (0 tamam, 1 hata, 2 hatalı girdi).
 
 ### 13.2 REST API
-Birincil arayüz (§5.8 uç tablosuna bakın). Makine istemcileri API anahtarı veya JWT kullanır.
+Birincil arayüz (uç başvurusu: [API.tr.md](API.tr.md)). Makine istemcileri API anahtarı veya JWT kullanır.
 
 ### 13.3 Web UI
 React + TypeScript + Tailwind: Dashboard, Kaynaklar, Arama. API-bağlı arama ve kaynak sağlık görünümleri sıradadır; statik derleme Nginx ile sunulur.

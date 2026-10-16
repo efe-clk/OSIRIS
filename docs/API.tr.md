@@ -3,7 +3,7 @@
 # OSIRIS API Başvurusu
 
 > Sürüm: 0.2.0 · İnteraktif doküman: `GET /docs` (Swagger UI), Nginx arkasında `/api/docs`
-> Taban URL (üretim): `http://<sunucu>/api` · Doğrudan (dev): `http://localhost:8001`
+> Taban URL (üretim): `https://<sunucu>:8443/api` · Doğrudan (dev): `http://localhost:8001`
 
 Tüm uçlar JSON döner. Zamanlar ISO-8601 UTC'dir. ID'ler UUID dizgisidir.
 
@@ -34,16 +34,16 @@ Tüm uçlar JSON döner. Zamanlar ISO-8601 UTC'dir. ID'ler UUID dizgisidir.
 
 ```bash
 # Operatör / kullanıcı API anahtarı
-curl -H "X-API-Key: <anahtar>" http://<sunucu>/api/plugins
+curl -H "X-API-Key: <anahtar>" https://<sunucu>:8443/api/plugins
 
 # Kısa ömürlü JWT (1 saat, HS256)
-curl -H "Authorization: Bearer <jeton>" http://<sunucu>/api/plugins
+curl -H "Authorization: Bearer <jeton>" https://<sunucu>:8443/api/plugins
 ```
 
 Jeton üretimi (operatör anahtarı gerekir):
 
 ```bash
-curl -X POST http://<sunucu>/api/auth/token \
+curl -X POST https://<sunucu>:8443/api/auth/token \
   -H 'Content-Type: application/json' \
   -d '{"api_key":"<OSIRIS_API_KEY>","role":"analyst"}'
 # → {"access_token":"...","token_type":"bearer","expires_in":3600}
@@ -52,7 +52,7 @@ curl -X POST http://<sunucu>/api/auth/token \
 Kullanıcı anahtarları (yalnızca admin) — ham değer **bir kez** döner, saklanmaz:
 
 ```bash
-curl -X POST http://<sunucu>/api/auth/keys \
+curl -X POST https://<sunucu>:8443/api/auth/keys \
   -H "X-API-Key: <OSIRIS_API_KEY>" -H 'Content-Type: application/json' \
   -d '{"username":"ali","role":"analyst","name":"laptop"}'
 # → {"id":"...","api_key":"osiris_...","role":"analyst"}
@@ -88,7 +88,7 @@ Roller yükselir: `viewer` → `analyst` → `admin`. Bilinmeyen rol reddedilir.
 ## 4. Sağlık
 
 ```bash
-curl http://<sunucu>/api/health
+curl https://<sunucu>:8443/api/health
 # {"status":"ok","service":"osiris-api"}
 ```
 
@@ -105,18 +105,18 @@ curl http://<sunucu>/api/health
 
 ```bash
 # Envanter + dinamik config şemaları (kaynak formlarını buradan besleyin)
-curl -H "X-API-Key: <a>" http://<sunucu>/api/plugins
+curl -H "X-API-Key: <a>" https://<sunucu>:8443/api/plugins
 # [{"id":"rss","name":"RSS/Atom Feed","network_type":"rss",
 #   "description":"...","config_schema":{"feed_url":{...}},"schedule_default":"*/15 * * * *"}]
 
 # Tek iş
-curl -X POST http://<sunucu>/api/collect -H "X-API-Key: <a>" \
+curl -X POST https://<sunucu>:8443/api/collect -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' \
   -d '{"plugin_id":"rss","config":{"feed_url":"https://example.com/rss"}}'
 # → {"items":3,"metadata":{...}}  (başarısızlıkta plugin mesajıyla 502)
 
 # Toplu (≤10 iş, sıralı, iş başına sonuç)
-curl -X POST http://<sunucu>/api/collect/batch -H "X-API-Key: <a>" \
+curl -X POST https://<sunucu>:8443/api/collect/batch -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' \
   -d '{"jobs":[{"plugin_id":"rss","config":{...}},{"plugin_id":"dns-whois","config":{"domain":"example.com"}}]}'
 # → {"jobs":[{"plugin_id":"rss","ok":true,"items":3,"error":null},...],"ok":1,"total":2}
@@ -125,11 +125,11 @@ curl -X POST http://<sunucu>/api/collect/batch -H "X-API-Key: <a>" \
 ## 7. Arama
 
 ```bash
-curl -X POST http://<sunucu>/api/search -H "X-API-Key: <a>" \
+curl -X POST https://<sunucu>:8443/api/search -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' -d '{"query":"saldırı","limit":20}'
 # → [{"id":"...","title":"...","url":"...","cleaned_content":"...","collected_at":"..."}]
 
-curl -X POST http://<sunucu>/api/search/entity -H "X-API-Key: <a>" \
+curl -X POST https://<sunucu>:8443/api/search/entity -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' -d '{"entity_type":"email","value":"a@b.co","limit":20}'
 ```
 
@@ -139,10 +139,10 @@ Varlık türleri: `person, org, location, ip, domain, email, phone, crypto_addre
 
 ```bash
 # Liste (filtre + sayfalama)
-curl -H "X-API-Key: <a>" "http://<sunucu>/api/sources?enabled=true&limit=50"
+curl -H "X-API-Key: <a>" "https://<sunucu>:8443/api/sources?enabled=true&limit=50"
 
 # Oluştur — plugin'e özel ayarlar config'e (/plugins şemalarına bakın)
-curl -X POST http://<sunucu>/api/sources -H "X-API-Key: <a>" \
+curl -X POST https://<sunucu>:8443/api/sources -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Örnek RSS","plugin_id":"rss","network_type":"rss",
        "url":"https://example.com/rss","schedule":"*/15 * * * *",
@@ -150,10 +150,10 @@ curl -X POST http://<sunucu>/api/sources -H "X-API-Key: <a>" \
 # → {"id":"..."}
 
 # Tek seferlik çalıştır (source_id işlenir → sources/source_metrics'e sağlık düşer)
-curl -X POST http://<sunucu>/api/sources/<id>/collect -H "X-API-Key: <a>"
+curl -X POST https://<sunucu>:8443/api/sources/<id>/collect -H "X-API-Key: <a>"
 
 # Sil
-curl -X DELETE http://<sunucu>/api/sources/<id> -H "X-API-Key: <a>"
+curl -X DELETE https://<sunucu>:8443/api/sources/<id> -H "X-API-Key: <a>"
 ```
 
 Kaynak satırları sağlık taşır: `last_crawled_at`, `last_success_at`, `failure_count`, `avg_response_ms`.
@@ -161,19 +161,19 @@ Kaynak satırları sağlık taşır: `last_crawled_at`, `last_success_at`, `fail
 ## 9. Öğeler & Varlıklar
 
 ```bash
-curl -H "X-API-Key: <a>" "http://<sunucu>/api/items/recent?limit=20&offset=0"
-curl -H "X-API-Key: <a>" http://<sunucu>/api/items/<id>        # + gömülü entities[]
-curl -H "X-API-Key: <a>" "http://<sunucu>/api/entities/top?entity_type=domain&limit=20"
+curl -H "X-API-Key: <a>" "https://<sunucu>:8443/api/items/recent?limit=20&offset=0"
+curl -H "X-API-Key: <a>" https://<sunucu>:8443/api/items/<id>        # + gömülü entities[]
+curl -H "X-API-Key: <a>" "https://<sunucu>:8443/api/entities/top?entity_type=domain&limit=20"
 # → [{"type":"domain","value":"example.com","mentions":12,"last_seen":"..."}]
 ```
 
 ## 10. Graf
 
 ```bash
-curl -H "X-API-Key: <a>" http://<sunucu>/api/graph
+curl -H "X-API-Key: <a>" https://<sunucu>:8443/api/graph
 # {"nodes":[{"id":"..."}],"edges":[{"source":"...","target":"...","relation_type":"..."}]}
 
-curl -X POST http://<sunucu>/api/graph/relation -H "X-API-Key: <a>" \
+curl -X POST https://<sunucu>:8443/api/graph/relation -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' \
   -d '{"source":"example.com","target":"1.2.3.4","relation_type":"resolves"}'
 # graph_edges'e yazılır (yeniden başlatmada korunur)
@@ -182,13 +182,13 @@ curl -X POST http://<sunucu>/api/graph/relation -H "X-API-Key: <a>" \
 ## 11. Uyarılar
 
 ```bash
-curl -X POST http://<sunucu>/api/saved-queries -H "X-API-Key: <a>" \
+curl -X POST https://<sunucu>:8443/api/saved-queries -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Kritik","query_text":"saldırı","query_type":"fts","alert_enabled":true}'
 # query_type ∈ fts|semantic|regex|entity|graph
 
 # Metni kurallara karşı kuru-sıkı dene (kayıt oluşmaz)
-curl -X POST http://<sunucu>/api/alerts/test -H "X-API-Key: <a>" \
+curl -X POST https://<sunucu>:8443/api/alerts/test -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' -d '{"text":"büyük saldırı oldu"}'
 # → [{"query_id":"...","query_name":"Kritik","item_id":null,"matched":"saldırı"}]
 ```
@@ -196,7 +196,7 @@ curl -X POST http://<sunucu>/api/alerts/test -H "X-API-Key: <a>" \
 ## 12. Raporlar
 
 ```bash
-curl -X POST http://<sunucu>/api/reports/markdown -H "X-API-Key: <a>" \
+curl -X POST https://<sunucu>:8443/api/reports/markdown -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' \
   -d '{"title":"R","scope":"S","summary":"O",
        "findings":[{"title":"B","description":"D"}],"sources":["k"]}'
@@ -206,7 +206,7 @@ curl -X POST http://<sunucu>/api/reports/markdown -H "X-API-Key: <a>" \
 ## 13. İstatistik
 
 ```bash
-curl -H "X-API-Key: <a>" http://<sunucu>/api/stats
+curl -H "X-API-Key: <a>" https://<sunucu>:8443/api/stats
 # {"sources":4,"sources_enabled":4,"items":128,"entities":342,"edges":57,
 #  "saved_queries":3,"alerts":2,"latest_item_at":"..."}
 ```

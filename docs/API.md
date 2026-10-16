@@ -3,7 +3,7 @@
 # OSIRIS API Reference
 
 > Version: 0.2.0 · Interactive docs: `GET /docs` (Swagger UI) behind Nginx at `/api/docs`
-> Base URL (production): `http://<host>/api` · Direct (dev): `http://localhost:8001`
+> Base URL (production): `https://<host>:8443/api` · Direct (dev): `http://localhost:8001`
 
 All endpoints return JSON. Timestamps are ISO-8601 UTC. IDs are UUID strings.
 
@@ -34,16 +34,16 @@ Three interchangeable credentials (send **one** per request):
 
 ```bash
 # Operator / user API key
-curl -H "X-API-Key: <key>" http://<host>/api/plugins
+curl -H "X-API-Key: <key>" https://<host>:8443/api/plugins
 
 # Short-lived JWT (1h, HS256)
-curl -H "Authorization: Bearer <token>" http://<host>/api/plugins
+curl -H "Authorization: Bearer <token>" https://<host>:8443/api/plugins
 ```
 
 Mint a token (operator key required):
 
 ```bash
-curl -X POST http://<host>/api/auth/token \
+curl -X POST https://<host>:8443/api/auth/token \
   -H 'Content-Type: application/json' \
   -d '{"api_key":"<OSIRIS_API_KEY>","role":"analyst"}'
 # → {"access_token":"...","token_type":"bearer","expires_in":3600}
@@ -52,7 +52,7 @@ curl -X POST http://<host>/api/auth/token \
 Per-user keys (admin only) — raw value is returned **once** and never stored:
 
 ```bash
-curl -X POST http://<host>/api/auth/keys \
+curl -X POST https://<host>:8443/api/auth/keys \
   -H "X-API-Key: <OSIRIS_API_KEY>" -H 'Content-Type: application/json' \
   -d '{"username":"ali","role":"analyst","name":"laptop"}'
 # → {"id":"...","api_key":"osiris_...","role":"analyst"}
@@ -88,7 +88,7 @@ Roles ascend: `viewer` → `analyst` → `admin`. Unknown roles are denied.
 ## 4. Health
 
 ```bash
-curl http://<host>/api/health
+curl https://<host>:8443/api/health
 # {"status":"ok","service":"osiris-api"}
 ```
 
@@ -105,18 +105,18 @@ curl http://<host>/api/health
 
 ```bash
 # Inventory incl. dynamic config schemas (drive source forms from this)
-curl -H "X-API-Key: <k>" http://<host>/api/plugins
+curl -H "X-API-Key: <k>" https://<host>:8443/api/plugins
 # [{"id":"rss","name":"RSS/Atom Feed","network_type":"rss",
 #   "description":"...","config_schema":{"feed_url":{...}},"schedule_default":"*/15 * * * *"}]
 
 # Single job
-curl -X POST http://<host>/api/collect -H "X-API-Key: <k>" \
+curl -X POST https://<host>:8443/api/collect -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' \
   -d '{"plugin_id":"rss","config":{"feed_url":"https://example.com/rss"}}'
 # → {"items":3,"metadata":{...}}  (502 with plugin error message on failure)
 
 # Batch (≤10 jobs, sequential, per-job results)
-curl -X POST http://<host>/api/collect/batch -H "X-API-Key: <k>" \
+curl -X POST https://<host>:8443/api/collect/batch -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' \
   -d '{"jobs":[{"plugin_id":"rss","config":{...}},{"plugin_id":"dns-whois","config":{"domain":"example.com"}}]}'
 # → {"jobs":[{"plugin_id":"rss","ok":true,"items":3,"error":null},...],"ok":1,"total":2}
@@ -125,11 +125,11 @@ curl -X POST http://<host>/api/collect/batch -H "X-API-Key: <k>" \
 ## 7. Search
 
 ```bash
-curl -X POST http://<host>/api/search -H "X-API-Key: <k>" \
+curl -X POST https://<host>:8443/api/search -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' -d '{"query":"saldırı","limit":20}'
 # → [{"id":"...","title":"...","url":"...","cleaned_content":"...","collected_at":"..."}]
 
-curl -X POST http://<host>/api/search/entity -H "X-API-Key: <k>" \
+curl -X POST https://<host>:8443/api/search/entity -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' -d '{"entity_type":"email","value":"a@b.co","limit":20}'
 ```
 
@@ -139,10 +139,10 @@ Entity types: `person, org, location, ip, domain, email, phone, crypto_address, 
 
 ```bash
 # List (filters + pagination)
-curl -H "X-API-Key: <k>" "http://<host>/api/sources?enabled=true&limit=50"
+curl -H "X-API-Key: <k>" "https://<host>:8443/api/sources?enabled=true&limit=50"
 
 # Create — plugin-specific knobs go in config (see /plugins schemas)
-curl -X POST http://<host>/api/sources -H "X-API-Key: <k>" \
+curl -X POST https://<host>:8443/api/sources -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Örnek RSS","plugin_id":"rss","network_type":"rss",
        "url":"https://example.com/rss","schedule":"*/15 * * * *",
@@ -150,10 +150,10 @@ curl -X POST http://<host>/api/sources -H "X-API-Key: <k>" \
 # → {"id":"..."}
 
 # Run once (records source_id → health metrics land in sources/source_metrics)
-curl -X POST http://<host>/api/sources/<id>/collect -H "X-API-Key: <k>"
+curl -X POST https://<host>:8443/api/sources/<id>/collect -H "X-API-Key: <k>"
 
 # Delete
-curl -X DELETE http://<host>/api/sources/<id> -H "X-API-Key: <k>"
+curl -X DELETE https://<host>:8443/api/sources/<id> -H "X-API-Key: <k>"
 ```
 
 Source rows carry health: `last_crawled_at`, `last_success_at`, `failure_count`, `avg_response_ms`.
@@ -161,19 +161,19 @@ Source rows carry health: `last_crawled_at`, `last_success_at`, `failure_count`,
 ## 9. Items & Entities
 
 ```bash
-curl -H "X-API-Key: <k>" "http://<host>/api/items/recent?limit=20&offset=0"
-curl -H "X-API-Key: <k>" http://<host>/api/items/<id>        # + embedded entities[]
-curl -H "X-API-Key: <k>" "http://<host>/api/entities/top?entity_type=domain&limit=20"
+curl -H "X-API-Key: <k>" "https://<host>:8443/api/items/recent?limit=20&offset=0"
+curl -H "X-API-Key: <k>" https://<host>:8443/api/items/<id>        # + embedded entities[]
+curl -H "X-API-Key: <k>" "https://<host>:8443/api/entities/top?entity_type=domain&limit=20"
 # → [{"type":"domain","value":"example.com","mentions":12,"last_seen":"..."}]
 ```
 
 ## 10. Graph
 
 ```bash
-curl -H "X-API-Key: <k>" http://<host>/api/graph
+curl -H "X-API-Key: <k>" https://<host>:8443/api/graph
 # {"nodes":[{"id":"..."}],"edges":[{"source":"...","target":"...","relation_type":"..."}]}
 
-curl -X POST http://<host>/api/graph/relation -H "X-API-Key: <k>" \
+curl -X POST https://<host>:8443/api/graph/relation -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' \
   -d '{"source":"example.com","target":"1.2.3.4","relation_type":"resolves"}'
 # persisted to graph_edges (survives restarts)
@@ -182,13 +182,13 @@ curl -X POST http://<host>/api/graph/relation -H "X-API-Key: <k>" \
 ## 11. Alerts
 
 ```bash
-curl -X POST http://<host>/api/saved-queries -H "X-API-Key: <k>" \
+curl -X POST https://<host>:8443/api/saved-queries -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Kritik","query_text":"saldırı","query_type":"fts","alert_enabled":true}'
 # query_type ∈ fts|semantic|regex|entity|graph
 
 # Dry-run text against enabled rules (creates nothing)
-curl -X POST http://<host>/api/alerts/test -H "X-API-Key: <k>" \
+curl -X POST https://<host>:8443/api/alerts/test -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' -d '{"text":"büyük saldırı oldu"}'
 # → [{"query_id":"...","query_name":"Kritik","item_id":null,"matched":"saldırı"}]
 ```
@@ -196,7 +196,7 @@ curl -X POST http://<host>/api/alerts/test -H "X-API-Key: <k>" \
 ## 12. Reports
 
 ```bash
-curl -X POST http://<host>/api/reports/markdown -H "X-API-Key: <k>" \
+curl -X POST https://<host>:8443/api/reports/markdown -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' \
   -d '{"title":"R","scope":"S","summary":"O",
        "findings":[{"title":"B","description":"D"}],"sources":["k"]}'
@@ -206,7 +206,7 @@ curl -X POST http://<host>/api/reports/markdown -H "X-API-Key: <k>" \
 ## 13. Stats
 
 ```bash
-curl -H "X-API-Key: <k>" http://<host>/api/stats
+curl -H "X-API-Key: <k>" https://<host>:8443/api/stats
 # {"sources":4,"sources_enabled":4,"items":128,"entities":342,"edges":57,
 #  "saved_queries":3,"alerts":2,"latest_item_at":"..."}
 ```
