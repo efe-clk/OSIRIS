@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 _WHITESPACE_RE = re.compile(r"\s+")
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-_DOMAIN_RE = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b")
+_DOMAIN_RE = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", re.IGNORECASE)
 _PHONE_RE = re.compile(r"\+?\d[\d\s\-().]{7,}\d")
 _CRYPTO_RE = re.compile(r"\b(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b|\b0x[a-fA-F0-9]{40}\b")
 _CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,7}\b", re.IGNORECASE)
@@ -161,6 +161,7 @@ class ProcessingPipeline:
         email_spans = [m.span() for m in _EMAIL_RE.finditer(text)]
         ip_spans = [m.span() for m in _IP_RE.finditer(text)]
         cve_spans = [m.span() for m in _CVE_RE.finditer(text)]
+        crypto_spans = [m.span() for m in _CRYPTO_RE.finditer(text)]
 
         def _overlaps(span: tuple[int, int], spans: list[tuple[int, int]]) -> bool:
             return any(s <= span[0] < e or s < span[1] <= e for s, e in spans)
@@ -176,8 +177,9 @@ class ProcessingPipeline:
                 continue
             _add("domain", match.group(0).lower())
         for match in _PHONE_RE.finditer(text):
-            # IP ve CVE içindeki sayı gruplarını telefon sayma
-            if _overlaps(match.span(), ip_spans) or _overlaps(match.span(), cve_spans):
+            # IP, CVE ve kripto adresi içindeki sayı gruplarını telefon sayma
+            if (_overlaps(match.span(), ip_spans) or _overlaps(match.span(), cve_spans)
+                    or _overlaps(match.span(), crypto_spans)):
                 continue
             digits = re.sub(r"\D", "", match.group(0))
             if 7 <= len(digits) <= 15:
