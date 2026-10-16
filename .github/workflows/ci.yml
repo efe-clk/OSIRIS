@@ -18,7 +18,7 @@ jobs:
         run: |
           pip install -e ./osiris-sdk
           pip install -e ./osiris-collector
-          pip install -e ./osiris-pipeline
+          pip install -e "./osiris-pipeline[ner]"
           pip install -e ./osiris-graph
           pip install -e ./osiris-alert
           pip install -e ./osiris-report
@@ -81,7 +81,7 @@ jobs:
         run: |
           pip install -e ./osiris-sdk -e ./osiris-collector -e "./osiris-pipeline[embedding,ner]" \
             -e ./osiris-graph -e ./osiris-query -e ./osiris-alert -e ./osiris-report \
-            -e ./osiris-api uvicorn -r tests/contract/requirements.txt
+            -e ./osiris-api uvicorn jsonschema -r tests/contract/requirements.txt
           for req in plugins/*/requirements.txt; do pip install -r "$req"; done
       - name: Entegrasyon + model golden testleri (NER, embedding)
         env:
