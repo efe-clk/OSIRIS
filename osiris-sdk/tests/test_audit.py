@@ -4,17 +4,22 @@ from osiris.audit import append_audit, verify_chain
 
 
 class FakeCursor:
-    def __init__(self, rows=None):
+    def __init__(self, rows=None, has_version_column=False):
         self.rows = list(rows or [])
+        self.has_version_column = has_version_column
         self.executed = []
         self.inserts = []
+        self._last = ""
 
     def execute(self, query, params=None):
         self.executed.append(query)
+        self._last = query
         if query.strip().upper().startswith("INSERT"):
             self.inserts.append(params)
 
     def fetchone(self):
+        if "information_schema" in self._last:
+            return (1,) if self.has_version_column else None
         return self.rows[0] if self.rows else None
 
     def fetchall(self):
@@ -25,8 +30,8 @@ class FakeCursor:
 
 
 class FakeConn:
-    def __init__(self, rows=None):
-        self.cur = FakeCursor(rows)
+    def __init__(self, rows=None, has_version_column=False):
+        self.cur = FakeCursor(rows, has_version_column)
         self.committed = False
 
     def cursor(self):
@@ -96,3 +101,72 @@ def test_append_audit_truncates_before_hash() -> None:
     # verify kanonik yükü saklanan değerden kurar → tutarlı olmalı
     check = FakeConn(rows=[(1, "u" * 200, "act", "res", {}, None, out["hash"])])
     assert verify_chain(check)["ok"] is True
+
+
+# ---- chain_version 2 (JCS) ----------------------------------------------------
+
+from osiris.audit import (  # noqa: E402
+    canonical_payload,
+    chain_hash,
+    verify_records,
+)
+
+
+def test_v2_written_when_column_exists() -> None:
+    conn = FakeConn(rows=[], has_version_column=True)
+    out = append_audit(conn, "api", "search", None, {"q": "x"})
+    assert out["chain_version"] == 2
+    assert conn.cur.inserts[0][-1] == 2
+    assert out["hash"] == chain_hash(
+        None, canonical_payload("api", "search", "", {"q": "x"}, 2))
+
+
+def test_v1_fallback_without_migration() -> None:
+    conn = FakeConn(rows=[], has_version_column=False)
+    out = append_audit(conn, "api", "search", None, {"q": "x"})
+    assert out["chain_version"] == 1
+    assert len(conn.cur.inserts[0]) == 6  # chain_version sütunu yazılmaz
+
+
+def test_jcs_number_forms_survive_jsonb_roundtrip() -> None:
+    # jsonb 1.0'ı "1.0", 1e16'yı 10000000000000000 olarak geri verir; v1 bunu
+    # farklı serileştirirdi, JCS aynı sayı = aynı dizge garanti eder
+    assert canonical_payload("u", "a", "", {"f": 1.0, "big": 1e16}, 2) == \
+        canonical_payload("u", "a", "", {"f": 1, "big": 10000000000000000}, 2)
+    assert canonical_payload("u", "a", "", {"f": 1.0}, 1) != \
+        canonical_payload("u", "a", "", {"f": 1}, 1)
+
+
+def test_unsafe_ints_and_nan_normalized() -> None:
+    conn = FakeConn(rows=[], has_version_column=True)
+    append_audit(conn, "u", "a", None, {"n": 2**60, "ok": 5})
+    import json
+    stored = json.loads(conn.cur.inserts[0][3])
+    assert stored == {"n": str(2**60), "ok": 5}
+    conn2 = FakeConn(rows=[], has_version_column=True)
+    append_audit(conn2, "u", "a", None, {"x": float("nan")})
+    assert json.loads(conn2.cur.inserts[0][3]) == {"_unserializable": True}
+
+
+def test_mixed_v1_v2_chain_verifies() -> None:
+    p1 = canonical_payload("u", "a1", "r", {"n": 1}, 1)
+    h1 = chain_hash(None, p1)
+    p2 = canonical_payload("u", "a2", "", {"f": 1.0}, 2)
+    h2 = chain_hash(h1, p2)
+    rows = [
+        (1, "u", "a1", "r", {"n": 1}, None, h1, 1),
+        (2, "u", "a2", "", '{"f": 1.0}', h1, h2, 2),
+    ]
+    assert verify_records(rows) == {"ok": True, "checked": 2}
+    # sürüm etiketi değiştirilirse (v2 kayıt v1 sayılırsa) hash tutmaz
+    forged = [rows[0], (*rows[1][:7], 1)]
+    assert verify_records(forged)["ok"] is False
+    assert verify_records([(1, "u", "a", "", {}, None, "x", 9)])["ok"] is False
+
+
+def test_verify_chain_reads_version_column() -> None:
+    p = canonical_payload("u", "a", "", {}, 2)
+    h = chain_hash(None, p)
+    conn = FakeConn(rows=[(1, "u", "a", "", {}, None, h, 2)], has_version_column=True)
+    assert verify_chain(conn)["ok"] is True
+    assert "chain_version" in conn.cur.executed[1]

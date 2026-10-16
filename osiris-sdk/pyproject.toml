@@ -9,6 +9,8 @@ description = "OSIRIS OSINT platformu paylaşılan Python SDK'sı"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0",
+    # RFC 8785 (JCS) — audit zinciri v2 kanonik JSON (Trail of Bits, Apache-2.0)
+    "rfc8785>=0.1.4,<0.2",
 ]
 
 [tool.setuptools.packages.find]
