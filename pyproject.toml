@@ -23,4 +23,5 @@ testpaths = [
     "plugins/irc/tests",
     "plugins/username-search/tests",
     "tests/golden",
+    "tests/integration",
 ]

@@ -37,6 +37,41 @@ jobs:
             --cov=osiris_query --cov=osiris_api --cov=osiris_cli \
             --cov-report=term-missing --cov-fail-under=80
 
+  integration:
+    name: Entegrasyon (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: osiris
+          POSTGRES_PASSWORD: osiris
+          POSTGRES_DB: osiris_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U osiris" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      OSIRIS_TEST_DATABASE_URL: postgresql://osiris:osiris@localhost:5432/osiris_test
+      PGPASSWORD: osiris
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Migration'ları uygula (iki kez — tekrar çalıştırılabilirlik)
+        run: |
+          for pass in 1 2; do
+            for f in db/migrations/*.sql; do
+              psql -h localhost -U osiris -d osiris_test -v ON_ERROR_STOP=1 -q -f "$f"
+            done
+          done
+      - name: Bağımlılıkları kur
+        run: |
+          pip install -e ./osiris-sdk -e ./osiris-pipeline pytest
+      - name: Entegrasyon testleri
+        run: pytest -q tests/integration
+
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest

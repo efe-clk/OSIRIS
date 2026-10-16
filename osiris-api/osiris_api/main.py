@@ -435,6 +435,23 @@ def _db():
     return psycopg.connect(DATABASE_URL, connect_timeout=5, row_factory=dict_row)
 
 
+_known_columns: set[tuple[str, str]] = set()
+
+
+def _has_column(conn: Any, table: str, column: str) -> bool:
+    """Ekleyici migration'lar uygulanmış mı? (Yalnızca olumlu sonuç önbelleklenir.)"""
+    if (table, column) in _known_columns:
+        return True
+    row = conn.execute(
+        "SELECT 1 AS ok FROM information_schema.columns"
+        " WHERE table_name = %s AND column_name = %s",
+        (table, column),
+    ).fetchone()
+    if row:
+        _known_columns.add((table, column))
+    return bool(row)
+
+
 @app.get("/stats", dependencies=[Depends(require_viewer)], tags=["Stats"],
          summary="Panel sayaçları")
 def stats() -> dict[str, Any]:
@@ -681,6 +698,8 @@ class SourceRequest(BaseModel):
     enabled: bool = True
     tags: list[str] = Field(default_factory=list, max_length=20)
     config: dict[str, Any] = Field(default_factory=dict, max_length=50)
+    # KVKK saklama süresi: None → OSIRIS_RETENTION_DAYS, 0 → süreyle silinmez
+    retention_days: int | None = Field(default=None, ge=0, le=36500)
 
 
 _VALID_NETWORKS = {"www", "tor", "i2p", "p2p", "freenet", "zeronet", "irc",
@@ -714,11 +733,15 @@ def list_sources(enabled: bool | None = None, plugin_id: str | None = None,
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     try:
         with _db() as conn:
+            # Migration 004 öncesi DB'de sütun yok → NULL (API önce dağıtılabilir)
+            retention = ("retention_days" if _has_column(conn, "sources", "retention_days")
+                         else "NULL::int AS retention_days")
             rows = conn.execute(
                 f"""
                 SELECT id::text AS id, name, url, network_type::text AS network_type,
                        plugin_id, schedule, priority, enabled, tags,
-                       last_crawled_at, last_success_at, failure_count, avg_response_ms
+                       last_crawled_at, last_success_at, failure_count, avg_response_ms,
+                       {retention}
                 FROM sources {where} ORDER BY name LIMIT %s OFFSET %s
                 """,
                 (*params, limit, offset),
@@ -737,24 +760,44 @@ def create_source(req: SourceRequest, ident: dict = Depends(require_analyst)) ->
         raise HTTPException(status_code=404, detail="Plugin bulunamadı")
     try:
         with _db() as conn:
-            row = conn.execute(
-                """
-                INSERT INTO sources
-                    (name, url, network_type, plugin_id, schedule, priority,
-                     enabled, tags, metadata)
-                VALUES (%s, NULLIF(%s,''), %s::network_type, %s,
-                        NULLIF(%s,''), %s, %s, %s, %s::jsonb)
-                RETURNING id::text AS id
-                """,
-                (req.name, req.url, req.network_type, req.plugin_id,
-                 req.schedule, req.priority, req.enabled,
-                 [str(t)[:100] for t in req.tags[:20]],
-                 json.dumps({"config": req.config}, ensure_ascii=False)),
-            ).fetchone()
+            has_retention = _has_column(conn, "sources", "retention_days")
+            if req.retention_days is not None and not has_retention:
+                raise HTTPException(status_code=503,
+                                    detail="retention_days için migration 004 uygulanmamış")
+            params = (req.name, req.url, req.network_type, req.plugin_id,
+                      req.schedule, req.priority, req.enabled,
+                      [str(t)[:100] for t in req.tags[:20]],
+                      json.dumps({"config": req.config}, ensure_ascii=False))
+            if has_retention:
+                row = conn.execute(
+                    """
+                    INSERT INTO sources
+                        (name, url, network_type, plugin_id, schedule, priority,
+                         enabled, tags, metadata, retention_days)
+                    VALUES (%s, NULLIF(%s,''), %s::network_type, %s,
+                            NULLIF(%s,''), %s, %s, %s, %s::jsonb, %s)
+                    RETURNING id::text AS id
+                    """,
+                    (*params, req.retention_days),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    INSERT INTO sources
+                        (name, url, network_type, plugin_id, schedule, priority,
+                         enabled, tags, metadata)
+                    VALUES (%s, NULLIF(%s,''), %s::network_type, %s,
+                            NULLIF(%s,''), %s, %s, %s, %s::jsonb)
+                    RETURNING id::text AS id
+                    """,
+                    params,
+                ).fetchone()
             conn.commit()
         _audit("source.create", req.name, {"plugin": req.plugin_id},
                user=ident["user"])
         return {"id": row["id"]}
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail="Kaynak oluşturulamadı") from exc
 
@@ -963,6 +1006,122 @@ def report_markdown(req: MarkdownReportRequest) -> dict[str, str]:
         return {"markdown": content}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail="Rapor üretilemedi") from exc
+
+
+# ---------------------------------------------------------------------------
+# KVKK: saklama ve silme (docs/SOZLESME.md §6). Yalnızca admin.
+# Denetim kaydına silinen kişisel veri YAZILMAZ — yalnızca SHA-256 özeti.
+# ---------------------------------------------------------------------------
+
+
+def _pii_digest(value: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+@app.delete("/items/{item_id}", tags=["Privacy"], summary="Öğeyi sil (KVKK)")
+def delete_item(item_id: str, ident: dict = Depends(require_admin)) -> dict[str, Any]:
+    """Öğeyi ve yalnızca ona bağlı kalan varlıkları kalıcı olarak siler."""
+    from osiris.retention import purge_orphan_entities
+
+    item_id = _uuid_or_404(item_id, "Öğe")
+    try:
+        with _db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM items WHERE id::text = %s", (item_id,))
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Öğe bulunamadı")
+                orphans = purge_orphan_entities(cur)
+            conn.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Öğe silinemedi") from exc
+    _audit("item.delete", None, {"id": item_id, "entities_deleted": orphans},
+           user=ident["user"])
+    return {"status": "deleted", "items_deleted": 1, "entities_deleted": orphans}
+
+
+class EraseRequest(BaseModel):
+    entity_type: str = Field(min_length=1, max_length=32)
+    value: str = Field(min_length=1, max_length=500)
+    delete_items: bool = True
+
+
+@app.post("/entities/erase", tags=["Privacy"], summary="Varlık bazlı silme (KVKK)")
+def erase_entity(req: EraseRequest, ident: dict = Depends(require_admin)) -> dict[str, Any]:
+    """Bir varlığı (örn. e-posta) ve — `delete_items` ise — onu anan öğeleri siler.
+
+    Eşleşme tip + büyük/küçük harf duyarsız değerdir. Graf kenarlarındaki aynı
+    ad da silinir. Denetim kaydına değerin yalnızca SHA-256 özeti yazılır.
+    """
+    global _graph_loaded
+    from osiris.retention import purge_orphan_entities
+    from osiris_query.engine import _VALID_ENTITY_TYPES as _ETYPES  # noqa: PLC0415
+
+    if req.entity_type not in _ETYPES:
+        raise HTTPException(status_code=400, detail="Geçersiz entity_type")
+    needle = req.value.strip().lower()
+    if not needle:
+        raise HTTPException(status_code=422, detail="value boş olamaz")
+    try:
+        with _db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM entities WHERE type = %s::entity_type"
+                    " AND lower(value) = %s",
+                    (req.entity_type, needle),
+                )
+                ids = [r["id"] for r in cur.fetchall()]
+                items_deleted = 0
+                if ids and req.delete_items:
+                    cur.execute(
+                        "DELETE FROM items WHERE id IN ("
+                        " SELECT item_id FROM item_entities WHERE entity_id = ANY(%s))",
+                        (ids,),
+                    )
+                    items_deleted = max(0, cur.rowcount or 0)
+                entities_deleted = 0
+                if ids:
+                    cur.execute("DELETE FROM entities WHERE id = ANY(%s)", (ids,))
+                    entities_deleted = max(0, cur.rowcount or 0)
+                cur.execute(
+                    "DELETE FROM graph_edges WHERE lower(source_name) = %s OR lower(target_name) = %s",
+                    (needle, needle),
+                )
+                edges_deleted = max(0, cur.rowcount or 0)
+                if items_deleted:
+                    entities_deleted += purge_orphan_entities(cur)
+            conn.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Silme başarısız") from exc
+    if edges_deleted:
+        with _graph_lock:  # bellekteki grafı DB'den yeniden kur
+            _graph.graph.clear()
+            _graph_loaded = False
+    out = {"items_deleted": items_deleted, "entities_deleted": entities_deleted,
+           "edges_deleted": edges_deleted}
+    _audit("entity.erase", None, {"entity_type": req.entity_type,
+                                  "value_sha256": _pii_digest(needle), **out},
+           user=ident["user"])
+    return out
+
+
+@app.post("/admin/retention/run", tags=["Privacy"], summary="Saklama temizliğini çalıştır")
+def run_retention(ident: dict = Depends(require_admin)) -> dict[str, int]:
+    """Süresi dolan öğeleri hemen siler (pipeline işçisi yoksa n8n/cron ile tetiklenebilir)."""
+    from osiris.retention import purge_expired
+
+    try:
+        with _db() as conn:
+            res = purge_expired(conn)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Saklama temizliği başarısız") from exc
+    _audit("retention.run", None, res, user=ident["user"])
+    return res
 
 
 def run() -> None:

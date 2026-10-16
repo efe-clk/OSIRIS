@@ -3,6 +3,7 @@
 Kullanım:
   osiris-pipeline --once                # kuyruğu bir kez boşalt
   osiris-pipeline --loop --interval 10  # sürekli çalış (Ctrl+C ile dur)
+  osiris-pipeline --purge               # süresi dolan öğeleri sil (KVKK) ve çık
 """
 
 from __future__ import annotations
@@ -27,6 +28,14 @@ def build_pipeline(args: argparse.Namespace) -> ProcessingPipeline:
     )
 
 
+def run_purge(database_url: str) -> dict[str, int]:
+    import psycopg
+    from osiris.retention import purge_expired
+
+    with psycopg.connect(database_url, connect_timeout=10) as conn:
+        return purge_expired(conn)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="osiris-pipeline", description="OSIRIS Processing Pipeline işçisi")
@@ -39,6 +48,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true", help="Tek tur çalışıp çık")
     parser.add_argument("--loop", action="store_true", help="Sürekli çalış")
     parser.add_argument("--interval", type=int, default=10, help="Tur arası saniye")
+    parser.add_argument("--purge", action="store_true",
+                        help="Saklama süresi dolan öğeleri silip çık (KVKK)")
+    parser.add_argument("--purge-interval", type=int,
+                        default=int(os.getenv("OSIRIS_RETENTION_INTERVAL", "3600")),
+                        help="--loop'ta saklama temizliği aralığı, sn (0 = kapalı)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -51,14 +65,31 @@ def main(argv: list[str] | None = None) -> int:
     if args.interval < 1 or args.interval > 3600:
         parser.error("--interval 1-3600 aralığında olmalı")
 
+    if args.purge_interval < 0 or args.purge_interval > 7 * 86400:
+        parser.error("--purge-interval 0-604800 aralığında olmalı")
+
+    if args.purge:
+        if not args.database_url:
+            parser.error("--purge için --database-url (OSIRIS_DATABASE_URL) gerekli")
+        res = run_purge(args.database_url)
+        print(f"{res['items_deleted']} öğe, {res['entities_deleted']} yetim varlık silindi")
+        return 0
+
     pipeline = build_pipeline(args)
     if args.once or not args.loop:
         total = pipeline.run(batch_size=args.batch)
         print(f"{total} kayıt işlendi")
         return 0
     logger.info("Pipeline döngüsü başladı (her %ds)", args.interval)
+    next_purge = time.monotonic()
     try:
         while True:
+            if args.database_url and args.purge_interval and time.monotonic() >= next_purge:
+                next_purge = time.monotonic() + args.purge_interval
+                try:
+                    run_purge(args.database_url)
+                except Exception as exc:  # noqa: BLE001 — temizlik hatası işçiyi düşürmez
+                    logger.error("Saklama temizliği başarısız: %s", exc)
             total = pipeline.run(batch_size=args.batch)
             if total:
                 logger.info("%d kayıt işlendi", total)
