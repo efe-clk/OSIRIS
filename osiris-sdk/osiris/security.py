@@ -49,31 +49,67 @@ def _host_ips(host: str) -> list[str]:
     return ips
 
 
-def is_blocked_host(host: str) -> bool:
-    """Özel/iç ağ host'u mu? Çözülemeyen host'lar da engellenir (fail-closed)."""
-    if not host:
+def _ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """IP engelli bloklardan birinde mi? IPv4-mapped IPv6 (::ffff:a.b.c.d) açılarak denetlenir."""
+    if ip.is_unspecified:  # 0.0.0.0 / :: → yerel makineye gider
         return True
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return any(ip in net for net in _BLOCKED_NETWORKS)
+
+
+def resolve_safe_ips(host: str) -> list[str]:
+    """Host'u çözer ve yalnızca dış (izinli) IP'leri döner; aksi halde ValueError.
+
+    Kayıtlardan biri bile iç ağdaysa host tümden reddedilir; çözülemeyen host da
+    reddedilir (fail-closed). Ham soket açan plugin'ler bağlantıyı DÖNEN IP'lere
+    yapmalıdır — host adıyla yeniden bağlanmak DNS rebinding'e açık kapı bırakır.
+    """
+    if not host:
+        raise ValueError("Host boş")
     h = host.strip().lower().rstrip(".")
     if h in ("localhost",):
-        return True
-    # Doğrudan IP verilmişse
+        raise ValueError(f"İç ağ/özel host engellendi: {h}")
     try:
-        ip = ipaddress.ip_address(h)
-        return any(ip in net for net in _BLOCKED_NETWORKS)
+        ips = [str(ipaddress.ip_address(h))]
     except ValueError:
-        pass
-    # DNS adı: çözümle ve tüm kayıtları kontrol et
-    ips = _host_ips(h)
+        ips = _host_ips(h)
     if not ips:
-        return True
+        raise ValueError(f"Host çözülemedi: {h}")
     for ip_str in ips:
         try:
-            ip = ipaddress.ip_address(ip_str)
-        except ValueError:
-            return True
-        if any(ip in net for net in _BLOCKED_NETWORKS):
-            return True
+            ip = ipaddress.ip_address(ip_str.split("%", 1)[0])  # IPv6 kapsam kimliği
+        except ValueError as exc:
+            raise ValueError(f"Geçersiz adres: {ip_str}") from exc
+        if _ip_blocked(ip):
+            raise ValueError(f"İç ağ/özel host engellendi: {h}")
+    return ips
+
+
+def is_blocked_host(host: str) -> bool:
+    """Özel/iç ağ host'u mu? Çözülemeyen host'lar da engellenir (fail-closed)."""
+    try:
+        resolve_safe_ips(host)
+    except ValueError:
+        return True
     return False
+
+
+def safe_create_connection(host: str, port: int, timeout: float = 15) -> socket.socket:
+    """SSRF denetimli TCP bağlantısı (IRC/ham soket plugin'leri için).
+
+    Host bir kez çözülür, tüm kayıtlar denetlenir ve bağlantı doğrulanmış IP'ye
+    açılır. İç ağ veya çözülemeyen host için ValueError, ağ hatası için OSError.
+    """
+    if not isinstance(port, int) or not 1 <= port <= _MAX_PORT:
+        raise ValueError("Geçersiz port")
+    last_exc: OSError | None = None
+    for ip_str in resolve_safe_ips(host):
+        try:
+            return socket.create_connection((ip_str, port), timeout=timeout)
+        except OSError as exc:
+            last_exc = exc
+    raise last_exc or OSError(f"Bağlanılamadı: {host}")
 
 
 def assert_safe_url(url: str, *, allow_onion: bool = False) -> str:

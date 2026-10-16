@@ -6,7 +6,12 @@ import socket
 from typing import Any
 
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
-from osiris.security import sanitize_channel, sanitize_hostname, sanitize_irc_token
+from osiris.security import (
+    safe_create_connection,
+    sanitize_channel,
+    sanitize_hostname,
+    sanitize_irc_token,
+)
 
 
 class IrcCollector(BaseCollector):
@@ -35,7 +40,8 @@ class IrcCollector(BaseCollector):
 
         sock: socket.socket | None = None
         try:
-            sock = socket.create_connection((server, port), timeout=15)
+            # SSRF: iç ağ host'ları reddedilir, bağlantı doğrulanmış IP'ye açılır
+            sock = safe_create_connection(server, port, timeout=15)
             sock.settimeout(10)
             sock.sendall(f"NICK {nick}\r\n".encode("utf-8", errors="ignore"))
             sock.sendall(f"USER {nick} 0 * :OSIRIS\r\n".encode("utf-8", errors="ignore"))
@@ -74,6 +80,8 @@ class IrcCollector(BaseCollector):
             except TimeoutError:
                 pass
             return CollectionResult(items=items, metadata={"server": server})
+        except ValueError as exc:
+            return CollectionResult(items=[], success=False, error=f"Geçersiz config: {exc}")
         except OSError as exc:
             return CollectionResult(items=[], success=False, error=str(exc)[:500])
         finally:
@@ -92,7 +100,7 @@ class IrcCollector(BaseCollector):
             port = int(self.config.get("port", 6667))
             if not 1 <= port <= 65535:
                 return False
-            sock = socket.create_connection((server, port), timeout=10)
+            sock = safe_create_connection(server, port, timeout=10)
             sock.close()
             return True
         except (OSError, ValueError):

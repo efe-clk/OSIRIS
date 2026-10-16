@@ -244,7 +244,7 @@ Auth: `X-API-Key` (operator) or per-user DB keys or `Authorization: Bearer <JWT>
 
 ## 6. Supported Networks and Protocols
 
-Implemented collectors (11): **web-scraper** (WWW), **tor** (`.onion` via localhost SOCKS5), **i2p** (eepsites via localhost HTTP proxy), **rss** (RSS/Atom, capped), **rest-api** (method allowlist, JSON-path dig), **irc** (injection-sanitized, PING-aware, time-boxed), **matrix** (room history, URL-encoded IDs), **dns-whois** (validated domains, allowlisted record types, bounded WHOIS), **shodan** (key never logged), **blockchain** (EVM `eth_blockNumber`/balance/txcount, Bitcoin via Blockstream allowlist), **username-search** (Maigret-style username footprint across ~2500 bundled sites: Maigret + WhatsMyName merged DB, refreshable via `tools/build_full_db.py`).
+Implemented collectors (11): **web-scraper** (WWW), **tor** (`.onion` via localhost SOCKS5), **i2p** (eepsites via localhost HTTP proxy), **rss** (RSS/Atom, capped), **rest-api** (method allowlist, JSON-path dig), **irc** (injection-sanitized, SSRF-guarded, PING-aware, time-boxed), **matrix** (room history, URL-encoded IDs), **dns-whois** (validated domains, allowlisted record types, bounded WHOIS), **shodan** (key never logged), **blockchain** (EVM `eth_blockNumber`/balance/txcount, Bitcoin via Blockstream allowlist), **username-search** (Maigret-style username footprint across ~2500 bundled sites: Maigret + WhatsMyName merged DB, refreshable via `tools/build_full_db.py`).
 
 Planned: Freenet/ZeroNet/RetroShare, BitTorrent/IPFS, XMPP/Nostr/Fediverse, BGP/cert-transparency, SDR/ADS-B/AIS, Monero limits documentation.
 
@@ -446,7 +446,7 @@ class MyCollector(BaseCollector):
         ...
 ```
 
-Security obligations: `assert_safe_url` for URLs, `sanitize_*` for hosts/domains/IRC tokens, no secret logging, bounded I/O.
+Security obligations: `assert_safe_url` for URLs, `safe_create_connection` for raw sockets (resolve → vet → connect to the vetted IP), `sanitize_*` for hosts/domains/IRC tokens, no secret logging, bounded I/O.
 
 ---
 

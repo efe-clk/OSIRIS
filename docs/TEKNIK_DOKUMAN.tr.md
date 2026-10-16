@@ -239,7 +239,7 @@ Auth: `X-API-Key` (operatör) veya kullanıcı DB anahtarları veya `Authorizati
 
 ## 6. Desteklenen Ağ ve Protokoller
 
-Gerçekleşen collector'lar (11): **web-scraper** (WWW), **tor** (localhost SOCKS5 ile `.onion`), **i2p** (localhost HTTP proxy ile eepsite), **rss** (sınırlı RSS/Atom), **rest-api** (metot allowlist, JSON-path), **irc** (enjeksiyon-arındırılmış, PING-duyarlı, süre kutulu), **matrix** (oda geçmişi, URL-kodlu ID), **dns-whois** (doğrulanmış domain, allowlist kayıt türleri, sınırlı WHOIS), **shodan** (anahtar asla loglanmaz), **blockchain** (EVM `eth_blockNumber`/bakiye/txcount, allowlist Blockstream ile Bitcoin), **username-search** (~2500 gömülü sitede Maigret tarzı kullanıcı izi: Maigret + WhatsMyName birleşik DB, `tools/build_full_db.py` ile tazelenir).
+Gerçekleşen collector'lar (11): **web-scraper** (WWW), **tor** (localhost SOCKS5 ile `.onion`), **i2p** (localhost HTTP proxy ile eepsite), **rss** (sınırlı RSS/Atom), **rest-api** (metot allowlist, JSON-path), **irc** (enjeksiyon-arındırılmış, SSRF denetimli, PING-duyarlı, süre kutulu), **matrix** (oda geçmişi, URL-kodlu ID), **dns-whois** (doğrulanmış domain, allowlist kayıt türleri, sınırlı WHOIS), **shodan** (anahtar asla loglanmaz), **blockchain** (EVM `eth_blockNumber`/bakiye/txcount, allowlist Blockstream ile Bitcoin), **username-search** (~2500 gömülü sitede Maigret tarzı kullanıcı izi: Maigret + WhatsMyName birleşik DB, `tools/build_full_db.py` ile tazelenir).
 
 Planlı: Freenet/ZeroNet/RetroShare, BitTorrent/IPFS, XMPP/Nostr/Fediverse, BGP/sertifika şeffaflığı, SDR/ADS-B/AIS, Monero sınır dokümantasyonu.
 
@@ -441,7 +441,7 @@ class MyCollector(BaseCollector):
         ...
 ```
 
-Güvenlik yükümlülükleri: URL'lerde `assert_safe_url`, host/domain/IRC jetonlarında `sanitize_*`, sır loglamama, sınırlı G/Ç.
+Güvenlik yükümlülükleri: URL'lerde `assert_safe_url`, ham soketlerde `safe_create_connection` (çöz → denetle → doğrulanmış IP'ye bağlan), host/domain/IRC jetonlarında `sanitize_*`, sır loglamama, sınırlı G/Ç.
 
 ---
 

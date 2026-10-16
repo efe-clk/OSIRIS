@@ -34,6 +34,7 @@ pytest -q
 5. Verify with the `osiris plugins` command.
 6. Security checklist for the new collector:
    - Validate every URL with `osiris.security.assert_safe_url`
+   - Open raw TCP sockets only via `osiris.security.safe_create_connection` (never `socket.create_connection` on a user-supplied host)
      (allow `.onion` only in the Tor plugin via `allow_onion=True`).
    - Validate hostnames/domains/channels with the `sanitize_*` helpers.
    - Never log or return secrets (API keys, tokens).

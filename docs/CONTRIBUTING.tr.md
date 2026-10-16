@@ -34,6 +34,7 @@ pytest -q
 5. `osiris plugins` komutuyla doğrulayın.
 6. Yeni collector için güvenlik kontrol listesi:
    - Her URL'yi `osiris.security.assert_safe_url` ile doğrulayın
+   - Ham TCP soketini yalnızca `osiris.security.safe_create_connection` ile açın (kullanıcının verdiği host'a asla doğrudan `socket.create_connection` yapmayın)
      (`.onion` yalnızca Tor plugin'inde, `allow_onion=True` ile).
    - Host/domain/kanal için `sanitize_*` yardımcılarını kullanın.
    - Sırları (API anahtarı, jeton) asla loglamayın veya döndürmeyin.

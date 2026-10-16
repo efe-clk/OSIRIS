@@ -6,6 +6,8 @@ from osiris.security import (
     cap_list,
     is_blocked_host,
     mask_secret,
+    resolve_safe_ips,
+    safe_create_connection,
     safe_title,
     sanitize_channel,
     sanitize_domain,
@@ -48,6 +50,60 @@ def test_is_blocked_host() -> None:
     assert is_blocked_host("10.1.2.3")
     # .invalid TLD asla çözülmez → fail-closed
     assert is_blocked_host("yok-boyle-host.invalid")
+
+
+@pytest.mark.parametrize("host", [
+    "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:169.254.169.254", "::", "0.0.0.0",
+])
+def test_mapped_and_unspecified_ips_blocked(host: str) -> None:
+    assert is_blocked_host(host)
+
+
+def test_mapped_ipv6_url_blocked() -> None:
+    with pytest.raises(ValueError):
+        assert_safe_url("http://[::ffff:127.0.0.1]/")
+
+
+def test_public_ip_literal_allowed() -> None:
+    assert resolve_safe_ips("93.184.216.34") == ["93.184.216.34"]
+    assert not is_blocked_host("93.184.216.34")
+
+
+def test_any_internal_record_rejects_host(monkeypatch) -> None:
+    import osiris.security as sec
+
+    monkeypatch.setattr(sec, "_host_ips", lambda h: ["93.184.216.34", "192.168.0.9"])
+    with pytest.raises(ValueError, match="engellendi"):
+        resolve_safe_ips("mixed.example.com")
+
+
+def test_safe_create_connection_rejects_before_connecting(monkeypatch) -> None:
+    import osiris.security as sec
+
+    def _forbidden(*a, **k):
+        raise AssertionError("bağlanılmamalıydı")
+    monkeypatch.setattr(sec.socket, "create_connection", _forbidden)
+    for host in ("127.0.0.1", "localhost", "yok-boyle-host.invalid"):
+        with pytest.raises(ValueError):
+            safe_create_connection(host, 6667)
+    with pytest.raises(ValueError):
+        safe_create_connection("93.184.216.34", 0)
+
+
+def test_safe_create_connection_tries_next_ip(monkeypatch) -> None:
+    import osiris.security as sec
+
+    monkeypatch.setattr(sec, "_host_ips", lambda h: ["93.184.216.34", "93.184.216.35"])
+    tried = []
+
+    def _connect(addr, timeout=None):
+        tried.append(addr[0])
+        if addr[0] == "93.184.216.34":
+            raise OSError("refused")
+        return "sock"
+    monkeypatch.setattr(sec.socket, "create_connection", _connect)
+    assert safe_create_connection("irc.example.com", 6697) == "sock"
+    assert tried == ["93.184.216.34", "93.184.216.35"]
 
 
 def test_sanitize_domain() -> None:
