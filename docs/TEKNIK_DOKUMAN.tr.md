@@ -116,10 +116,10 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 │    │  [WWW] [Tor] [I2P] [RSS] [API] [IRC] [Shodan] ...  │      │
 │    └─────────────────────────────────────────────────────┘      │
 │                                                                  │
-│    ┌───────────────┐    ┌───────────────┐    ┌──────────────┐   │
-│    │   N8N         │    │  FreshRSS     │    │  Message     │   │
-│    │  Otomasyon    │    │  Feed Motoru  │    │  Queue       │   │
-│    └───────────────┘    └───────────────┘    │  (Redis)     │   │
+│    ┌───────────────┐                         ┌──────────────┐   │
+│    │   N8N         │                         │  Message     │   │
+│    │  Otomasyon    │                         │  Queue       │   │
+│    └───────────────┘                         │  (Redis)     │   │
 │                                              └──────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -135,7 +135,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 | **Processing Pipeline** | Temizle, zenginleştir, tekilleştir, depola | Python |
 | **Storage Layer** | Kalıcı depolama | PostgreSQL + Redis |
 | **Otomasyon** | İş akışları ve tetikleyiciler | N8N |
-| **Feed Engine** | RSS/Atom yönetimi | FreshRSS |
+| **Feed Engine** | RSS/Atom yönetimi | `rss` plugin'i (FreshRSS R3'te kaldırıldı) |
 | **Message Queue** | Asenkron bileşen iletişimi | Redis |
 
 ---
@@ -159,7 +159,6 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 | **pgvector** | Embedding'ler — semantik arama |
 | **Redis** | Önbellek + `osiris:raw_items` kuyruğu + `osiris:alerts` pub/sub |
 | **TimescaleDB** | Opsiyonel; varsa `source_metrics` hypertable (yoksa zarif yedek) |
-| **MinIO** | Yerel S3-uyumlu nesne depolama |
 
 ### 4.3 Arayüz Teknolojileri
 
@@ -177,7 +176,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 `beautifulsoup4`, `langdetect`, `spaCy` (opsiyonel, zarif yedek), `sentence-transformers` (opsiyonel `osiris-pipeline[embedding]`), `networkx`, `pandas`.
 
 ### 4.6 Otomasyon & Entegrasyon
-N8N (self-host, API anahtar başlıklı), FreshRSS (self-host), APScheduler (cron), Redis pub/sub (uyarılar).
+N8N (self-host, API anahtar başlıklı), APScheduler (cron), Redis pub/sub (uyarılar).
 
 ### 4.7 Güvenlik & Şifreleme
 TLS 1.2/1.3 (Nginx `:8443`), SHA-256 API anahtar özetleri, HS256 JWT (yalnızca stdlib), hash-zincirli denetim logları, SSRF izin/engelle motoru, `.env` sırları (git-dışı, mod 600).
@@ -364,9 +363,7 @@ TimescaleDB yokluğu ölümcül değildir (NOTICE + yedek), stok `pgvector:pg16`
 servisler:
   postgresql:        # ana DB (host 5432)
   redis:             # önbellek + kuyruk (host 6379)
-  minio:             # nesne depolama (9000/9001)
   n8n:               # otomasyon (host 5678)
-  freshrss:          # RSS motoru (host 8080)
   osiris-api:        # REST API (127.0.0.1:8001 → 8000, profil: api/full)
   osiris-web-ui:     # arayüz (127.0.0.1:3001 → 3000, profil: ui/full)
   nginx:             # ters proxy + TLS (:80, :8443)
@@ -383,7 +380,6 @@ Uygulama portları yalnızca localhost'a bağlıdır; dış erişim Nginx üzeri
    │
    ├── /api/*      → osiris-api:8000   (önek sıyrılır)
    ├── /n8n/*      → n8n:5678
-   ├── /rss/*      → freshrss:80
    └── /ui/*       → osiris-web-ui:3000
 
 [Dahili Docker Ağı]
@@ -466,10 +462,10 @@ Qt6 güç istemcisi ve Tauri hafif istemcisi yol haritasındadır (§15).
 ### 14.1 N8N Entegrasyonu
 `deploy/n8n/osiris-workflow.json`: zamanlayıcı → arama → toplama; `X-API-Key` başlıkları (`{{ $env.OSIRIS_API_KEY }}` — n8n servisinde tanımlı olmalı) ve zaman aşımlı.
 
-### 14.2 FreshRSS Entegrasyonu
-FreshRSS standart akışları yönetir (canlı). Yeni makalelerin pipeline'a
-alınması **planlıdır** — şu an FreshRSS, OSIRIS yanında bağımsız okuyucu
-olarak çalışır.
+### 14.2 RSS
+Akışlar `rss` plugin'i ile doğrudan toplanır. Bağımsız okuyucu olarak çalışan ve
+hiçbir kodun kullanmadığı FreshRSS (ve nesne deposu MinIO) Rust geçişi R3'te
+compose'dan kaldırıldı (K2/K3).
 
 ### 14.3 Webhook'lar & Uyarılar
 Uyarı işleyiciler (e-posta/Telegram/webhook) `AlertManager.register_handler`'a takılır; anomali sıçramaları aynı kanaldan gider.
@@ -509,7 +505,6 @@ Uyarı işleyiciler (e-posta/Telegram/webhook) `AlertManager.register_handler`'a
 | Değişken | Amaç |
 |----------|------|
 | `POSTGRES_PASSWORD` | DB parolası (`ALTER ROLE` ile döndürülür, sonra API restart) |
-| `MINIO_ROOT_USER/PASSWORD` | Nesne depo kökü (değişiklikte MinIO restart) |
 | `N8N_USER/PASSWORD` | n8n kapısı (ilk kurulum değeri geçerlidir) |
 | `OSIRIS_API_KEY` | Operatör anahtarı (admin). Zorunlu: yoksa API başlamaz |
 | `OSIRIS_INSECURE_OPEN` | `1` ise anahtarsız açık mod (yalnızca güvenilir ağ) |

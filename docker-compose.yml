@@ -54,23 +54,6 @@ services:
       timeout: 5s
       retries: 5
 
-  minio:
-    # Quay (Docker Hub reposu tasindi) — calisan surume sabitli
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: osiris-minio
-    restart: unless-stopped
-    mem_limit: 2g
-    logging: *default-logging
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-osiris}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-osiris_dev_password}
-    volumes:
-      - miniodata:/data
-    ports:
-      # Yalnizca localhost (konsol/API disari acilmaz)
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
 
   n8n:
     image: n8nio/n8n:1.114.4
@@ -90,20 +73,6 @@ services:
       # Yalnizca localhost (n8n arayuzu nginx /n8n uzerinden)
       - "127.0.0.1:5678:5678"
 
-  freshrss:
-    image: freshrss/freshrss:1.24.0
-    container_name: osiris-freshrss
-    restart: unless-stopped
-    mem_limit: 512m
-    logging: *default-logging
-    environment:
-      TZ: UTC
-      CRON_MIN: "*/5"
-    volumes:
-      - freshrssdata:/var/www/FreshRSS/data
-    ports:
-      # Yalnizca localhost (okuyucu nginx /rss uzerinden)
-      - "127.0.0.1:8080:80"
 
   # NOT: nginx.conf bu servis adlarına proxy yapar; tanımsız bırakılırsa
   # nginx DNS çözümlemede başarısız olur. Profillerle isteğe bağlı başlatılır.
@@ -169,6 +138,4 @@ services:
 volumes:
   pgdata:
   redisdata:
-  miniodata:
   n8ndata:
-  freshrssdata:

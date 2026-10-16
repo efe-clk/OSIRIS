@@ -67,9 +67,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for layers, data flow, and the 
 ## Technology Stack
 
 - **Languages:** C++20, Python 3.11+, TypeScript
-- **Database:** PostgreSQL 16 (+ pgvector, TimescaleDB optional), Redis, MinIO
+- **Database:** PostgreSQL 16 (+ pgvector, TimescaleDB optional), Redis
 - **Interface:** CLI, REST API, React + Tailwind Web UI
-- **Automation:** N8N, FreshRSS, APScheduler
+- **Automation:** N8N, APScheduler
 - **Security:** TLS (8443), API keys + JWT + RBAC, SSRF guards, hash-chained audit logs
 - **Deployment:** Docker, Docker Compose, Nginx
 
@@ -82,7 +82,7 @@ cp .env.example .env
 # Generate the TLS bootstrap certificate (fresh installs only)
 ./deploy/nginx/make-certs.sh
 
-# Start infrastructure (PostgreSQL, Redis, MinIO, N8N, FreshRSS, Nginx)
+# Start infrastructure (PostgreSQL, Redis, N8N, Nginx)
 docker compose up -d
 
 # Start API + Web UI as well

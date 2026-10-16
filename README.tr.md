@@ -67,9 +67,9 @@ Katmanlar, veri akışı ve güvenlik modeli için bkz. [docs/ARCHITECTURE.tr.md
 ## Teknoloji Stack'i
 
 - **Diller:** C++20, Python 3.11+, TypeScript
-- **Veritabanı:** PostgreSQL 16 (+ pgvector, TimescaleDB opsiyonel), Redis, MinIO
+- **Veritabanı:** PostgreSQL 16 (+ pgvector, TimescaleDB opsiyonel), Redis
 - **Arayüz:** CLI, REST API, React + Tailwind Web UI
-- **Otomasyon:** N8N, FreshRSS, APScheduler
+- **Otomasyon:** N8N, APScheduler
 - **Güvenlik:** TLS (8443), API anahtarı + JWT + RBAC, SSRF korumaları, hash-zincirli denetim logları
 - **Dağıtım:** Docker, Docker Compose, Nginx
 
@@ -82,7 +82,7 @@ cp .env.example .env
 # TLS bootstrap sertifikasını üretin (yalnızca taze kurulum)
 ./deploy/nginx/make-certs.sh
 
-# Altyapıyı başlat (PostgreSQL, Redis, MinIO, N8N, FreshRSS, Nginx)
+# Altyapıyı başlat (PostgreSQL, Redis, N8N, Nginx)
 docker compose up -d
 
 # API + Web UI ile birlikte

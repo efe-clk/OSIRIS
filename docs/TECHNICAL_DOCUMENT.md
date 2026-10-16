@@ -116,10 +116,10 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 │    │  [WWW] [Tor] [I2P] [RSS] [API] [IRC] [Shodan] ...  │      │
 │    └─────────────────────────────────────────────────────┘      │
 │                                                                  │
-│    ┌───────────────┐    ┌───────────────┐    ┌──────────────┐   │
-│    │   N8N         │    │  FreshRSS     │    │  Message     │   │
-│    │  Automation   │    │  Feed Engine  │    │  Queue       │   │
-│    └───────────────┘    └───────────────┘    │  (Redis)     │   │
+│    ┌───────────────┐                         ┌──────────────┐   │
+│    │   N8N         │                         │  Message     │   │
+│    │  Automation   │                         │  Queue       │   │
+│    └───────────────┘                         │  (Redis)     │   │
 │                                              └──────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -135,7 +135,7 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 | **Processing Pipeline** | Clean, enrich, deduplicate, store | Python |
 | **Storage Layer** | Persistent storage | PostgreSQL + Redis |
 | **Automation** | Workflows and triggers | N8N |
-| **Feed Engine** | RSS/Atom management | FreshRSS |
+| **Feed Engine** | RSS/Atom management | `rss` plugin (FreshRSS removed in R3) |
 | **Message Queue** | Async inter-component messaging | Redis |
 
 ---
@@ -159,7 +159,6 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 | **pgvector** | Embeddings — semantic search |
 | **Redis** | Cache + `osiris:raw_items` queue + `osiris:alerts` pub/sub |
 | **TimescaleDB** | Optional; `source_metrics` hypertable when present (graceful fallback) |
-| **MinIO** | Local S3-compatible object storage |
 
 ### 4.3 Interface Technologies
 
@@ -180,7 +179,7 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 
 ### 4.6 Automation & Integration
 
-N8N (self-hosted, API-key headers), FreshRSS (self-hosted), APScheduler (cron), Redis pub/sub (alerts).
+N8N (self-hosted, API-key headers), APScheduler (cron), Redis pub/sub (alerts).
 
 ### 4.7 Security & Cryptography
 
@@ -369,9 +368,7 @@ TimescaleDB absence is non-fatal (NOTICE + fallback), verified on stock `pgvecto
 services:
   postgresql:        # main DB (host 5432)
   redis:             # cache + queue (host 6379)
-  minio:             # object storage (9000/9001)
   n8n:               # automation (host 5678)
-  freshrss:          # RSS engine (host 8080)
   osiris-api:        # REST API (127.0.0.1:8001 → 8000, profile: api/full)
   osiris-web-ui:     # frontend (127.0.0.1:3001 → 3000, profile: ui/full)
   nginx:             # reverse proxy + TLS (:80, :8443)
@@ -388,7 +385,6 @@ Internet
    │
    ├── /api/*      → osiris-api:8000   (prefix stripped)
    ├── /n8n/*      → n8n:5678
-   ├── /rss/*      → freshrss:80
    └── /ui/*       → osiris-web-ui:3000
 
 [Internal Docker Network]
@@ -471,10 +467,10 @@ Qt6 power client and Tauri lightweight client remain roadmap items (§15).
 ### 14.1 N8N Integration
 `deploy/n8n/osiris-workflow.json`: schedule → search → collect, with `X-API-Key` headers (`{{ $env.OSIRIS_API_KEY }}` — set it on the n8n service) and timeouts.
 
-### 14.2 FreshRSS Integration
-FreshRSS manages standard feeds (live). Pipeline ingestion of new FreshRSS
-articles is **planned** — currently FreshRSS runs as a standalone reader
-alongside OSIRIS.
+### 14.2 RSS
+Feeds are collected directly by the `rss` plugin. FreshRSS (a standalone reader no
+code used) and the MinIO object store were removed from compose in Rust migration
+R3 (K2/K3).
 
 ### 14.3 Webhooks & Alerts
 Alert handlers (email/Telegram/webhook) plug into `AlertManager.register_handler`; anomaly spikes emit through the same channel.
@@ -514,7 +510,6 @@ Alert handlers (email/Telegram/webhook) plug into `AlertManager.register_handler
 | Variable | Purpose |
 |----------|---------|
 | `POSTGRES_PASSWORD` | DB password (rotate via `ALTER ROLE`, then restart API) |
-| `MINIO_ROOT_USER/PASSWORD` | Object storage root (restart MinIO after change) |
 | `N8N_USER/PASSWORD` | n8n gate (first-setup value wins) |
 | `OSIRIS_API_KEY` | Operator key (admin). Required: the API refuses to start without it |
 | `OSIRIS_INSECURE_OPEN` | `1` enables keyless open mode (trusted network only) |
