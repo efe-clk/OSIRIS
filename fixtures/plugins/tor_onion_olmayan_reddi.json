@@ -1,0 +1,17 @@
+{
+  "plugin": "tor",
+  "config": {
+    "url": "https://example.com/"
+  },
+  "http": [],
+  "expected": {
+    "success": false,
+    "error": ".onion adresi gerekli",
+    "items": [],
+    "metadata": {}
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

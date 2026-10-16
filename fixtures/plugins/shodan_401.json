@@ -1,0 +1,34 @@
+{
+  "plugin": "shodan",
+  "config": {
+    "api_key": "yanlis",
+    "query": "x"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.shodan.io/shodan/host/search",
+        "params": {
+          "key": "yanlis",
+          "query": "x"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {},
+        "body": "{}"
+      }
+    }
+  ],
+  "expected": {
+    "success": false,
+    "error": "Shodan: yetkisiz (API anahtarı geçersiz)",
+    "items": [],
+    "metadata": {}
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

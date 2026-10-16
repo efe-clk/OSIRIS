@@ -1,0 +1,55 @@
+{
+  "plugin": "rss",
+  "config": {
+    "feed_url": "https://feeds.example.com/osint.xml",
+    "max_items": 5
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://feeds.example.com/osint.xml"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/rss+xml"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\"><channel><title>OSINT Akışı</title>\n<item><title>Yeni fidye yazılımı</title><link>https://haber.example.com/1</link>\n<description>&lt;p&gt;LockBit &lt;b&gt;CVE-2024-1234&lt;/b&gt; kullanıyor&lt;/p&gt;</description>\n<pubDate>Mon, 05 Jan 2026 10:00:00 GMT</pubDate></item>\n<item><title>Sızıntı</title><link>https://haber.example.com/2</link><description>dump@example.com</description></item>\n</channel></rss>"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": "https://haber.example.com/1",
+        "title": "Yeni fidye yazılımı",
+        "raw_content": "<p>LockBit <b>CVE-2024-1234</b> kullanıyor</p>",
+        "published_at": "Mon, 05 Jan 2026 10:00:00 GMT",
+        "metadata": {
+          "feed": "https://feeds.example.com/osint.xml"
+        },
+        "tags": []
+      },
+      {
+        "url": "https://haber.example.com/2",
+        "title": "Sızıntı",
+        "raw_content": "dump@example.com",
+        "published_at": null,
+        "metadata": {
+          "feed": "https://feeds.example.com/osint.xml"
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "feed": "https://feeds.example.com/osint.xml"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

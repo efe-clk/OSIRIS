@@ -1,0 +1,43 @@
+{
+  "plugin": "tor",
+  "config": {
+    "url": "http://exampleonionaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion/"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "http://exampleonionaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion/"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": "<html><title>Gizli Pazar</title><body><h1>Ürünler</h1> bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq</body></html>"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": "http://exampleonionaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion/",
+        "title": "Gizli Pazar",
+        "raw_content": "Gizli Pazar Ürünler bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+        "published_at": null,
+        "metadata": {
+          "network": "tor"
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "url": "http://exampleonionaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion/",
+      "network": "tor"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

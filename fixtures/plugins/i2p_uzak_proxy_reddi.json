@@ -1,0 +1,18 @@
+{
+  "plugin": "i2p",
+  "config": {
+    "url": "http://forum.i2p/",
+    "http_proxy_host": "10.0.0.5"
+  },
+  "http": [],
+  "expected": {
+    "success": false,
+    "error": "I2P proxy host yalnızca localhost olabilir",
+    "items": [],
+    "metadata": {}
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "plugin": "dns-whois",
+  "config": {
+    "domain": "Example.COM."
+  },
+  "dns": {
+    "A": [
+      "93.184.216.34"
+    ],
+    "AAAA": "NoAnswer",
+    "MX": [
+      "0 ."
+    ],
+    "NS": [
+      "a.iana-servers.net.",
+      "b.iana-servers.net."
+    ],
+    "TXT": [
+      "\"v=spf1 -all\""
+    ]
+  },
+  "sockets": [
+    {
+      "recv": [
+        "% IANA WHOIS server\n",
+        "domain: EXAMPLE.COM\n"
+      ]
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": null,
+        "title": null,
+        "raw_content": "93.184.216.34",
+        "published_at": null,
+        "metadata": {
+          "domain": "example.com",
+          "record_type": "A"
+        },
+        "tags": []
+      },
+      {
+        "url": null,
+        "title": null,
+        "raw_content": "0 .",
+        "published_at": null,
+        "metadata": {
+          "domain": "example.com",
+          "record_type": "MX"
+        },
+        "tags": []
+      },
+      {
+        "url": null,
+        "title": null,
+        "raw_content": "a.iana-servers.net.",
+        "published_at": null,
+        "metadata": {
+          "domain": "example.com",
+          "record_type": "NS"
+        },
+        "tags": []
+      },
+      {
+        "url": null,
+        "title": null,
+        "raw_content": "b.iana-servers.net.",
+        "published_at": null,
+        "metadata": {
+          "domain": "example.com",
+          "record_type": "NS"
+        },
+        "tags": []
+      },
+      {
+        "url": null,
+        "title": null,
+        "raw_content": "\"v=spf1 -all\"",
+        "published_at": null,
+        "metadata": {
+          "domain": "example.com",
+          "record_type": "TXT"
+        },
+        "tags": []
+      },
+      {
+        "url": null,
+        "title": null,
+        "raw_content": "% IANA WHOIS server\ndomain: EXAMPLE.COM\n",
+        "published_at": null,
+        "metadata": {
+          "domain": "example.com",
+          "record_type": "WHOIS"
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "domain": "example.com"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": [
+      [
+        "whois.iana.org",
+        43
+      ]
+    ]
+  }
+}

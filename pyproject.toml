@@ -22,4 +22,5 @@ testpaths = [
     "osiris-cli/tests",
     "plugins/irc/tests",
     "plugins/username-search/tests",
+    "tests/golden",
 ]

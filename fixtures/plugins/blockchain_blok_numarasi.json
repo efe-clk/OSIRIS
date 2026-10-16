@@ -1,0 +1,48 @@
+{
+  "plugin": "blockchain",
+  "config": {
+    "rpc_url": "https://rpc.example.com/"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://rpc.example.com/",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "eth_blockNumber",
+          "params": [],
+          "id": 1
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x1312d00\"}"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": null,
+        "title": null,
+        "raw_content": "block_number=0x1312d00",
+        "published_at": null,
+        "metadata": {
+          "chain": "ethereum"
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "block_number": "0x1312d00"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

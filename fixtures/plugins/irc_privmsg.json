@@ -1,0 +1,48 @@
+{
+  "plugin": "irc",
+  "config": {
+    "server": "irc.example.net",
+    "channels": [
+      "#osint",
+      "#tr"
+    ],
+    "nickname": "osiris-bot"
+  },
+  "sockets": [
+    {
+      "recv": [
+        ":srv 001 osiris-bot :Welcome\r\nPING :tok123\r\n",
+        ":ali!u@h PRIVMSG #osint :merhaba dünya\r\n:srv NOTICE x :y\r\n"
+      ]
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": null,
+        "title": null,
+        "raw_content": ":ali!u@h PRIVMSG #osint :merhaba dünya",
+        "published_at": null,
+        "metadata": {
+          "server": "irc.example.net",
+          "protocol": "irc"
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "server": "irc.example.net"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": [
+      [
+        "93.184.216.34",
+        6667
+      ]
+    ]
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "plugin": "web-scraper",
+  "config": {
+    "url": "https://forum.example.com/",
+    "css_selector": "div.post"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://forum.example.com/"
+      },
+      "response": {
+        "status": 301,
+        "headers": {
+          "Location": "/tr/"
+        },
+        "body": ""
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://forum.example.com/tr/"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/html; charset=utf-8"
+        },
+        "body": "<html><head><title> Forum  Ana Sayfa </title></head><body><div class='post'>İlk <b>gönderi</b></div><div class='post'>İkinci: 8.8.8.8</div><div class='post'>  </div><p>dışarıda</p></body></html>"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": "https://forum.example.com/",
+        "title": "Forum  Ana Sayfa",
+        "raw_content": "İlk gönderi",
+        "published_at": null,
+        "metadata": {
+          "depth": 1
+        },
+        "tags": []
+      },
+      {
+        "url": "https://forum.example.com/",
+        "title": "Forum  Ana Sayfa",
+        "raw_content": "İkinci: 8.8.8.8",
+        "published_at": null,
+        "metadata": {
+          "depth": 1
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "url": "https://forum.example.com/"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

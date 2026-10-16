@@ -1,0 +1,47 @@
+{
+  "plugin": "blockchain",
+  "config": {
+    "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+    "chain": "bitcoin"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://blockstream.info/api/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": "{\"chain_stats\": {\"funded_txo_sum\": 7000, \"spent_txo_sum\": 2500, \"tx_count\": 3}}"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": null,
+        "title": null,
+        "raw_content": "address=1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa balance_sat=4500 txcount=3",
+        "published_at": null,
+        "metadata": {
+          "chain": "bitcoin",
+          "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+        },
+        "tags": [
+          "crypto"
+        ]
+      }
+    ],
+    "metadata": {
+      "chain": "bitcoin",
+      "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

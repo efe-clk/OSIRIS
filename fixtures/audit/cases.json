@@ -1,0 +1,142 @@
+{
+  "cases": [
+    {
+      "name": "v1_zincir",
+      "records": [
+        {
+          "user_id": "operator",
+          "action": "auth.token",
+          "resource": null,
+          "detail": {
+            "role": "admin"
+          },
+          "chain_version": 1
+        },
+        {
+          "user_id": "api",
+          "action": "search",
+          "resource": null,
+          "detail": {
+            "query": "ransomware",
+            "hits": 3
+          },
+          "chain_version": 1
+        }
+      ],
+      "expected": {
+        "chain": [
+          {
+            "payload": "{\"action\":\"auth.token\",\"detail\":{\"role\":\"admin\"},\"resource\":\"\",\"user_id\":\"operator\"}",
+            "prev_hash": null,
+            "hash": "be1100081ae4e3b71aac5b52d804b773fee8216215ae86c6015d92e5a8cc798b"
+          },
+          {
+            "payload": "{\"action\":\"search\",\"detail\":{\"hits\":3,\"query\":\"ransomware\"},\"resource\":\"\",\"user_id\":\"api\"}",
+            "prev_hash": "be1100081ae4e3b71aac5b52d804b773fee8216215ae86c6015d92e5a8cc798b",
+            "hash": "5bddfd959aadace168e1e8e7ef48894a5e4f662cbb6f7100e4b3b6253c94d6a8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "v2_jcs_zincir",
+      "records": [
+        {
+          "user_id": "ali",
+          "action": "collect",
+          "resource": "rss",
+          "detail": {
+            "items": 12,
+            "ratio": 1.0,
+            "big": 1e+16,
+            "ş": "ğ",
+            "b": [
+              true,
+              null,
+              0.1
+            ]
+          },
+          "chain_version": 2
+        },
+        {
+          "user_id": null,
+          "action": "source.delete",
+          "resource": null,
+          "detail": null,
+          "chain_version": 2
+        },
+        {
+          "user_id": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu",
+          "action": "x",
+          "resource": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+          "detail": {
+            "n": 1152921504606846976,
+            "z": -0.0,
+            "e": 1e-07,
+            "k": {
+              "b": 1,
+              "a": 2
+            }
+          },
+          "chain_version": 2
+        }
+      ],
+      "expected": {
+        "chain": [
+          {
+            "payload": "{\"action\":\"collect\",\"detail\":{\"b\":[true,null,0.1],\"big\":10000000000000000,\"items\":12,\"ratio\":1,\"ş\":\"ğ\"},\"resource\":\"rss\",\"user_id\":\"ali\"}",
+            "prev_hash": null,
+            "hash": "3c3d543241f9498396474317c2713523592b224893108bac04039ef7017fb890"
+          },
+          {
+            "payload": "{\"action\":\"source.delete\",\"detail\":{},\"resource\":\"\",\"user_id\":\"\"}",
+            "prev_hash": "3c3d543241f9498396474317c2713523592b224893108bac04039ef7017fb890",
+            "hash": "68187ccb79db171e19cf6308791f0667936139245f5dd0ad4019309459b68542"
+          },
+          {
+            "payload": "{\"action\":\"x\",\"detail\":{\"e\":1e-7,\"k\":{\"a\":2,\"b\":1},\"n\":\"1152921504606846976\",\"z\":0},\"resource\":\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"user_id\":\"uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu\"}",
+            "prev_hash": "68187ccb79db171e19cf6308791f0667936139245f5dd0ad4019309459b68542",
+            "hash": "9a94956ef53e860e36c13e2059db4d8ddffc445975eb4fd5f4c3537133cb4b7e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "v1_den_v2_ye_gecis",
+      "records": [
+        {
+          "user_id": "api",
+          "action": "search",
+          "resource": null,
+          "detail": {
+            "f": 1.0
+          },
+          "chain_version": 1
+        },
+        {
+          "user_id": "api",
+          "action": "search",
+          "resource": null,
+          "detail": {
+            "f": 1.0
+          },
+          "chain_version": 2
+        }
+      ],
+      "expected": {
+        "chain": [
+          {
+            "payload": "{\"action\":\"search\",\"detail\":{\"f\":1.0},\"resource\":\"\",\"user_id\":\"api\"}",
+            "prev_hash": null,
+            "hash": "edf9be922cd8db8d2ec12cc307257a637f98d93908d35f509a778937e6bf0674"
+          },
+          {
+            "payload": "{\"action\":\"search\",\"detail\":{\"f\":1},\"resource\":\"\",\"user_id\":\"api\"}",
+            "prev_hash": "edf9be922cd8db8d2ec12cc307257a637f98d93908d35f509a778937e6bf0674",
+            "hash": "b434cf3e05afbb510b29cd5f71bd5ba1cec2fcc5605ad6aac12bf8eaba3981c4"
+          }
+        ]
+      }
+    }
+  ]
+}

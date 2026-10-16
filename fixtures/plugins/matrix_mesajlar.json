@@ -1,0 +1,49 @@
+{
+  "plugin": "matrix",
+  "config": {
+    "homeserver": "https://matrix.example.org/",
+    "room_id": "!abc:example.org",
+    "access_token": "tok"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://matrix.example.org/_matrix/client/v3/rooms/%21abc%3Aexample.org/messages",
+        "params": {
+          "dir": "b",
+          "limit": "50"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": "{\"chunk\": [{\"type\": \"m.room.message\", \"sender\": \"@ali:example.org\", \"content\": {\"body\": \"toplant\\u0131 yar\\u0131n\"}}, {\"type\": \"m.room.member\", \"sender\": \"@x:example.org\", \"content\": {}}, {\"type\": \"m.room.message\", \"content\": {\"body\": \"\"}}, {\"type\": \"m.room.message\", \"sender\": \"@veli:example.org\", \"content\": \"bozuk\"}]}"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": null,
+        "title": null,
+        "raw_content": "toplantı yarın",
+        "published_at": null,
+        "metadata": {
+          "room": "!abc:example.org",
+          "sender": "@ali:example.org"
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "room": "!abc:example.org"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

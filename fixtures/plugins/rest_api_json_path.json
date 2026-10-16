@@ -1,0 +1,61 @@
+{
+  "plugin": "rest-api",
+  "config": {
+    "endpoint": "https://api.example.com/v1/olaylar",
+    "params": {
+      "q": "fidye",
+      "n": 2
+    },
+    "json_path": "data.items"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/olaylar",
+        "params": {
+          "q": "fidye",
+          "n": "2"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": "{\"data\": {\"items\": [{\"title\": \"kay\\u0131t 1\", \"id\": 1, \"tags\": [\"a\"], \"ok\": true, \"none\": null}, {\"id\": 2, \"v\": 1.5}]}}"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": "https://api.example.com/v1/olaylar",
+        "title": "kayıt 1",
+        "raw_content": "{'title': 'kayıt 1', 'id': 1, 'tags': ['a'], 'ok': True, 'none': None}",
+        "published_at": null,
+        "metadata": {
+          "endpoint": "https://api.example.com/v1/olaylar"
+        },
+        "tags": []
+      },
+      {
+        "url": "https://api.example.com/v1/olaylar",
+        "title": null,
+        "raw_content": "{'id': 2, 'v': 1.5}",
+        "published_at": null,
+        "metadata": {
+          "endpoint": "https://api.example.com/v1/olaylar"
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "endpoint": "https://api.example.com/v1/olaylar"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

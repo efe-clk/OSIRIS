@@ -1,0 +1,60 @@
+{
+  "plugin": "shodan",
+  "config": {
+    "api_key": "GIZLI_ANAHTAR",
+    "query": "nginx country:TR"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.shodan.io/shodan/host/search",
+        "params": {
+          "key": "GIZLI_ANAHTAR",
+          "query": "nginx country:TR"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": "{\"matches\": [{\"ip_str\": \"93.184.216.34\", \"port\": 443, \"product\": \"nginx\", \"org\": \"\\u00d6rnek\"}, \"bozuk\", {\"ip_str\": \"1.2.3.4\", \"port\": 22}]}"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": "http://93.184.216.34:443",
+        "title": "nginx",
+        "raw_content": "{'ip_str': '93.184.216.34', 'port': 443, 'product': 'nginx', 'org': 'Örnek'}",
+        "published_at": null,
+        "metadata": {
+          "ip": "93.184.216.34",
+          "port": 443
+        },
+        "tags": []
+      },
+      {
+        "url": "http://1.2.3.4:22",
+        "title": null,
+        "raw_content": "{'ip_str': '1.2.3.4', 'port': 22}",
+        "published_at": null,
+        "metadata": {
+          "ip": "1.2.3.4",
+          "port": 22
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "query": "nginx country:TR",
+      "count": 2
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

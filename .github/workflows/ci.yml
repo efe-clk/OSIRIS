@@ -48,7 +48,7 @@ jobs:
       - name: Ruff kur
         run: pip install ruff
       - name: Lint çalıştır
-        run: ruff check osiris-sdk osiris-collector osiris-pipeline osiris-graph osiris-alert osiris-report osiris-query osiris-api osiris-cli plugins
+        run: ruff check osiris-sdk osiris-collector osiris-pipeline osiris-graph osiris-alert osiris-report osiris-query osiris-api osiris-cli plugins tests
       - name: Döküman link kontrolü
         run: |
           python3 - << 'EOF'

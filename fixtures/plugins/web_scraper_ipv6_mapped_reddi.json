@@ -1,0 +1,17 @@
+{
+  "plugin": "web-scraper",
+  "config": {
+    "url": "http://[::ffff:127.0.0.1]/"
+  },
+  "http": [],
+  "expected": {
+    "success": false,
+    "error": "İç ağ/özel host engellendi: ::ffff:127.0.0.1",
+    "items": [],
+    "metadata": {}
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "cases": [
+    {
+      "name": "eposta_ip_domain",
+      "input": "İletişim: test@example.com, sunucu 192.168.1.1, site example.org",
+      "expected": {
+        "entities": [
+          {
+            "type": "email",
+            "value": "test@example.com"
+          },
+          {
+            "type": "ip",
+            "value": "192.168.1.1"
+          },
+          {
+            "type": "domain",
+            "value": "example.org"
+          }
+        ]
+      }
+    },
+    {
+      "name": "eposta_icindeki_domain_ayrica_eklenmez",
+      "input": "ali@ornek.com.tr ve ornek.com.tr",
+      "expected": {
+        "entities": [
+          {
+            "type": "email",
+            "value": "ali@ornek.com.tr"
+          },
+          {
+            "type": "domain",
+            "value": "ornek.com.tr"
+          }
+        ]
+      }
+    },
+    {
+      "name": "gecersiz_ip_elenir",
+      "input": "999.999.999.999 ve 10.0.0.256 ama 8.8.8.8",
+      "expected": {
+        "entities": [
+          {
+            "type": "ip",
+            "value": "8.8.8.8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cve_kucuk_harf_buyutulur",
+      "input": "cve-2024-12345 ve CVE-2021-44228",
+      "expected": {
+        "entities": [
+          {
+            "type": "cve",
+            "value": "CVE-2024-12345"
+          },
+          {
+            "type": "cve",
+            "value": "CVE-2021-44228"
+          }
+        ]
+      }
+    },
+    {
+      "name": "telefon_ip_ve_cve_ile_cakismaz",
+      "input": "Ara +90 (532) 123-45-67; IP 1.2.3.4; CVE-2023-1234567",
+      "expected": {
+        "entities": [
+          {
+            "type": "ip",
+            "value": "1.2.3.4"
+          },
+          {
+            "type": "phone",
+            "value": "+90 (532) 123-45-67"
+          },
+          {
+            "type": "cve",
+            "value": "CVE-2023-1234567"
+          }
+        ]
+      }
+    },
+    {
+      "name": "telefon_hane_siniri",
+      "input": "12-34 ve 1234567890123456",
+      "expected": {
+        "entities": []
+      }
+    },
+    {
+      "name": "kripto_adresleri",
+      "input": "BTC 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa ETH 0x52908400098527886E0F7030069857D2E4169EE7 bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+      "expected": {
+        "entities": [
+          {
+            "type": "crypto_address",
+            "value": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+          },
+          {
+            "type": "crypto_address",
+            "value": "0x52908400098527886E0F7030069857D2E4169EE7"
+          },
+          {
+            "type": "crypto_address",
+            "value": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tekrar_buyuk_kucuk_harf_duyarsiz",
+      "input": "A@B.COM a@b.com Example.ORG example.org",
+      "expected": {
+        "entities": [
+          {
+            "type": "email",
+            "value": "A@B.COM"
+          },
+          {
+            "type": "domain",
+            "value": "example.org"
+          }
+        ]
+      }
+    },
+    {
+      "name": "domain_kucuk_harfe_iner",
+      "input": "Visit WWW.Example.COM now",
+      "expected": {
+        "entities": [
+          {
+            "type": "domain",
+            "value": "www.example.com"
+          }
+        ]
+      }
+    },
+    {
+      "name": "bos",
+      "input": "",
+      "expected": {
+        "entities": []
+      }
+    }
+  ]
+}

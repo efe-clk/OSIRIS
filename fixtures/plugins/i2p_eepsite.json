@@ -1,0 +1,43 @@
+{
+  "plugin": "i2p",
+  "config": {
+    "url": "http://forum.i2p/"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "http://forum.i2p/"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": "<title>I2P Forum</title><p>merhaba</p>"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": "http://forum.i2p/",
+        "title": "I2P Forum",
+        "raw_content": "I2P Forum merhaba",
+        "published_at": null,
+        "metadata": {
+          "network": "i2p"
+        },
+        "tags": []
+      }
+    ],
+    "metadata": {
+      "url": "http://forum.i2p/",
+      "network": "i2p"
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

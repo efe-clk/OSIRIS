@@ -1,0 +1,29 @@
+{
+  "plugin": "rss",
+  "config": {
+    "feed_url": "https://feeds.example.com/down.xml"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://feeds.example.com/down.xml"
+      },
+      "response": {
+        "status": 500,
+        "headers": {},
+        "body": "err"
+      }
+    }
+  ],
+  "expected": {
+    "success": false,
+    "error": "500 Server Error:  for url: https://feeds.example.com/down.xml",
+    "items": [],
+    "metadata": {}
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

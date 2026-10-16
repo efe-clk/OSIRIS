@@ -1,0 +1,23 @@
+{
+  "plugin": "dns-whois",
+  "config": {
+    "domain": "yok.example",
+    "record_types": [
+      "a",
+      "BOGUS"
+    ]
+  },
+  "dns": {
+    "A": "NXDOMAIN"
+  },
+  "expected": {
+    "success": false,
+    "error": "Domain bulunamadı",
+    "items": [],
+    "metadata": {}
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

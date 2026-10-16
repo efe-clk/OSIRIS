@@ -1,0 +1,19 @@
+{
+  "plugin": "irc",
+  "config": {
+    "server": "10.1.2.3",
+    "channels": [
+      "#x"
+    ]
+  },
+  "expected": {
+    "success": false,
+    "error": "Geçersiz config: İç ağ/özel host engellendi: 10.1.2.3",
+    "items": [],
+    "metadata": {}
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

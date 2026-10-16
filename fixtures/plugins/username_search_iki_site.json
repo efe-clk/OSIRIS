@@ -1,0 +1,66 @@
+{
+  "plugin": "username-search",
+  "config": {
+    "username": "osirisbot",
+    "sites": [
+      "GitHub",
+      "GitLab"
+    ],
+    "workers": 2
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://github.com/osirisbot"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": "<html>profil</html>"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/osirisbot"
+      },
+      "response": {
+        "status": 404,
+        "headers": {},
+        "body": "yok"
+      }
+    }
+  ],
+  "expected": {
+    "success": true,
+    "error": null,
+    "items": [
+      {
+        "url": "https://github.com/osirisbot",
+        "title": "osirisbot @ GitHub",
+        "raw_content": "Profil bulundu: GitHub — https://github.com/osirisbot",
+        "published_at": null,
+        "metadata": {
+          "site": "GitHub",
+          "username": "osirisbot",
+          "check": "status_code"
+        },
+        "tags": [
+          "username",
+          "dev"
+        ]
+      }
+    ],
+    "metadata": {
+      "username": "osirisbot",
+      "checked": 2,
+      "found": 1,
+      "unknown": 1
+    }
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

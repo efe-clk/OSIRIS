@@ -1,0 +1,29 @@
+{
+  "plugin": "rest-api",
+  "config": {
+    "endpoint": "https://api.example.com/html"
+  },
+  "http": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/html"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": "<html>"
+      }
+    }
+  ],
+  "expected": {
+    "success": false,
+    "error": "Geçersiz JSON yanıtı",
+    "items": [],
+    "metadata": {}
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}

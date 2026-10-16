@@ -1,0 +1,17 @@
+{
+  "plugin": "rss",
+  "config": {
+    "feed_url": "http://169.254.169.254/latest"
+  },
+  "http": [],
+  "expected": {
+    "success": false,
+    "error": "İç ağ/özel host engellendi: 169.254.169.254",
+    "items": [],
+    "metadata": {}
+  },
+  "expected_network": {
+    "http_unconsumed": 0,
+    "connects": []
+  }
+}
