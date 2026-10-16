@@ -7,7 +7,8 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
 | R0 — Envanter | ✅ Tamamlandı, kararlar onaylandı | `master` |
 | R1 — Doküman + güvenlik düzeltmeleri | ✅ Tamamlandı | `master` |
 | R2 — Geçiş sözleşmesi | ✅ Tamamlandı | `master` |
-| R3–R7 | ⏳ Başlamadı | — |
+| R3 — Geçiş dostu altyapı | ✅ Tamamlandı | `master` |
+| R4–R7 | ⏳ Başlamadı | — |
 
 ## Kararlar (kullanıcı onayı, 2026-10-16)
 
@@ -87,4 +88,49 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
 4. Sözleşme testleri canlıya karşı güvenle çalıştırılabilir (`OSIRIS_CONTRACT_DESTRUCTIVE` verme): `OSIRIS_BASE_URL=https://<sunucu>:8443/api OSIRIS_CONTRACT_API_KEY=… OSIRIS_CONTRACT_VERIFY_TLS=0 pytest tests/contract`. Testler `contract-*` adlı kullanıcılar bırakır, anahtarları iptal edilmiş olur.
 
 **Kalanlar**
-- E1 (açık): canlıda `osiris:raw_items` kuyruğunu ne boşaltıyor?
+- E1 → R3'te kapandı (kullanıcı: kuyruğu boşaltan bir şey yok; `worker` profilli servis eklendi).
+
+## R3 (2026-10-16)
+
+**Kararlar:** K4 modeli olarak kullanıcının seçtiği Davlan mBERT-hrl ONNX (int8, AFL-3.0, repoda dağıtılmıyor) kullanıldı. E1'e verilen cevap "kuyruğu boşaltan bir şey yok / bilmiyorum" oldu; bu yüzden yalnızca açıkça başlatılınca çalışan `worker` profilli bir servis eklendi.
+
+**Yapılanlar**
+- **K2/K3:** MinIO ve FreshRSS compose, nginx `/rss/`, `.env.example` ve dokümanlardan (iki dil) kaldırıldı. `nginx -t` doğrulandı.
+- **Tor/I2P (E6):**
+  - `darknet` profilli `tor` (alpine + tor, yalnızca istemci) ve `i2pd` servisleri eklendi. Host'a port yayınlanmıyor.
+  - Plugin'ler artık `OSIRIS_TOR_SOCKS` / `OSIRIS_I2P_HTTP_PROXY` ile belirlenen operatör proxy'sini kullanıyor; kullanıcı config'i başka bir host seçemiyor.
+  - Gerçek bir tor konteyneri üzerinden TorCollector DuckDuckGo'nun .onion adresini çekebildi.
+- **Redis Streams:**
+  - Kuyruk `osiris:stream:raw_items`, consumer group `osiris-pipeline`. Akış: önce eski LIST boşaltılıyor, sonra `XAUTOCLAIM`, sonra `XREADGROUP`.
+  - Başarılı kayıtlar `XACK` + `XDEL` ile siliniyor. Bozuk kayıtlar ve 5 teslimi aşanlar ölü-mektup akışına gidiyor.
+  - Teslim garantisi artık **en az bir kez** (önceden en fazla bir kezdi). Gerçek Redis'te 7 entegrasyon senaryosu geçti.
+- **K5 embedding:**
+  - fastembed + `paraphrase-multilingual-MiniLM-L12-v2` (384 boyut, Apache-2.0).
+  - Migration **005** `embedding_v2` ve `embedding_model` sütunlarını ekliyor. `--reembed` eski öğeleri dolduruyor.
+  - Gerçek PG testinde Türkçe sorgu İngilizce ransomware öğesini ilk sırada buldu.
+  - Rust karşılığı fastembed-rs `ParaphraseMLMiniLML12V2Q`; aynı dosyayı kullandığı crate kaynağında doğrulandı.
+- **K4 NER:**
+  - spaCy kaldırıldı (zaten hiç çalışmıyordu, E3). Yerine onnxruntime + tokenizers ile ONNX NER geldi.
+  - Birleştirme kuralları sözleşmede (§11) ve modelsiz testlerle sabitlendi. 9 NER fixture'ı eklendi.
+- **Modeller:** `models/download.py` sabit HF revizyonlarından indirip sha256 / git-blob ile doğruluyor. Modeller git'e girmiyor.
+- **Pipeline işçisi (E1):**
+  - `Dockerfile.pipeline` ve compose'da `osiris-pipeline` (profil `worker`) eklendi.
+  - Duman testi: konteyner akıştan okudu, vektör + NER + regex varlıklarıyla DB'ye yazdı.
+- **CI:** model önbelleği, model golden testleri ve `OSIRIS_REQUIRE_MODELS` korumasıyla (model yoksa test sessizce atlanmıyor).
+- **Testler:** 348 birim + 15 entegrasyon (PG, Redis, model) + 144 sözleşme. Modelsiz koşulda kapsam %81,8.
+
+**Sapmalar**
+- Embedding modeli olarak plandaki örnek multilingual-e5-small yerine **MiniLM-L12-v2** seçildi (ikisi de 384 boyutlu). Gerekçe: e5-small Python fastembed'de hazır desteklenmiyor, MiniLM hem Python'da hem Rust'ta hazır destekleniyor ve e5'in `query:` / `passage:` önek tuzağını taşımıyor.
+- Embedding varsayılan olarak **isteğe bağlı** kalmaya devam ediyor (`OSIRIS_EMBEDDING_MODEL`); `worker` servisi bunu varsayılan olarak açıyor.
+- Stream anahtarı yeni (`osiris:stream:raw_items`), çünkü aynı anahtar LIST'ten Stream'e çevrilemiyor (WRONGTYPE). Eski LIST uyumluluk okuyucusuyla boşaltılıyor.
+- fastembed `>=0.8.1,<0.10` aralığına sabitlendi. 0.9.0 iki haftadan yeni olduğu için testler 0.8.1 ile yapıldı.
+- Duman testi bir hata yakaladı: İndirilen modeller 0600 izinliydi ve konteyner kullanıcısı okuyamıyordu. Düzeltildi.
+
+**⚠ Canlı kurulum için dağıtım adımları (R3)**
+1. `db/migrations/005_embedding.sql` dosyasını uygula (yalnızca ekleme yapıyor, tekrar çalıştırılabilir).
+2. API ve işçiyi **birlikte** güncelle. Yeni collector Stream'e yazıyor; eski LIST'te bekleyen mesajları işçinin uyumluluk okuyucusu boşaltıyor.
+3. Modelleri indir: `python models/download.py` (~420 MB).
+4. İşçiyi başlatmadan **önce** `OSIRIS_RETENTION_DAYS` değerini gözden geçir. İşçi ilk turda saklama temizliğini çalıştırır.
+   Ardından: `docker compose --profile worker up -d --build`. Eski öğeleri vektörlemek istersen: `docker compose exec osiris-pipeline osiris-pipeline --reembed`.
+5. MinIO ve FreshRSS konteynerlerini kaldır: `docker compose up -d --remove-orphans`. Birimler (`miniodata`, `freshrssdata`) silinmez. FreshRSS'te akış listesi varsa önce OPML olarak dışa aktar.
+6. Tor/I2P isteniyorsa: `docker compose --profile darknet up -d --build`.
