@@ -25,6 +25,14 @@ def build() -> dict[Path, object]:
             inp = {k: v for k, v in case.items() if k != "expected"}
             case["expected"] = runner(inp)
         out[path] = data
+    if harness.embedding_available():  # model yoksa mevcut beklenenler korunur
+        path = harness.FIXTURES / "embedding" / "cases.json"
+        data = harness.load(path)
+        for case in data["cases"]:
+            case["expected"] = harness.run_embedding({k: v for k, v in case.items() if k != "expected"})
+        out[path] = data
+    else:
+        print("UYARI: embedding modeli yok (python models/download.py) — embedding fixture'ları atlandı")
     for path in sorted((harness.FIXTURES / "plugins").glob("*.json")):
         case = harness.load(path)
         inp = {k: v for k, v in case.items() if k not in ("expected", "expected_network")}

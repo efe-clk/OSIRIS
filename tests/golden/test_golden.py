@@ -74,3 +74,31 @@ def test_plugin_fixture(path: Path) -> None:
     assert report["http_unconsumed"] == 0, "kayıtlı HTTP yanıtlarının hepsi kullanılmalı"
     assert report == case["expected_network"]
     assert result == case["expected"]
+
+
+_EMB = harness.load(harness.FIXTURES / "embedding" / "cases.json")
+_needs_model = pytest.mark.skipif(not harness.embedding_available(),
+                                  reason="embedding modeli yok (python models/download.py)")
+
+
+def _cos(a, b) -> float:
+    return sum(x * y for x, y in zip(a, b, strict=True))
+
+
+@_needs_model
+@pytest.mark.parametrize("case", [pytest.param(c, id=c["name"]) for c in _EMB["cases"]])
+def test_embedding_matches_within_tolerance(case) -> None:
+    got = harness.run_embedding(case)["vector"]
+    want = case["expected"]["vector"]
+    assert len(got) == _EMB["dim"] == len(want)
+    assert _cos(got, want) >= _EMB["tolerance"]["min_cosine_to_expected"]
+
+
+def test_embedding_fixture_semantics() -> None:
+    """Beklenen vektörler kendi içinde anlamlı (model olmadan da koşar)."""
+    vec = {c["name"]: c["expected"]["vector"] for c in _EMB["cases"]}
+    for v in vec.values():
+        assert abs(sum(x * x for x in v) - 1.0) < 1e-4  # L2-normalize
+    for pair in _EMB["pairs"]:
+        c = _cos(vec[pair["a"]], vec[pair["b"]])
+        assert c >= pair.get("min_cosine", -1) and c <= pair.get("max_cosine", 1)

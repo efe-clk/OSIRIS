@@ -16,9 +16,11 @@ import hashlib
 import ipaddress
 import json
 import logging
+import math
 import os
 import re
 import socket
+from pathlib import Path
 from typing import Any
 
 import redis
@@ -37,6 +39,16 @@ _CRYPTO_RE = re.compile(r"\b(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b|\b0x[a-fA-F0-9]
 _CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,7}\b", re.IGNORECASE)
 
 _MAX_CONTENT_CHARS = 200_000
+# Embedding (R3/K5): fastembed ONNX; sütun embedding_v2 VECTOR(384) (migration 005)
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+EMBEDDING_DIM = 384
+_MAX_EMBED_CHARS = 8000
+_LOCAL_EMBEDDING_DIR = "embedding/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q"
+
+
+def model_dir() -> Path:
+    """ONNX model kök dizini: OSIRIS_MODEL_DIR (varsayılan ./models)."""
+    return Path(os.getenv("OSIRIS_MODEL_DIR", "models"))
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _VALID_ENTITY_TYPES = {
     "person", "org", "location", "ip", "domain", "email",
@@ -220,15 +232,22 @@ class ProcessingPipeline:
 
     @property
     def embedder(self):
-        """Sentence-transformers modelini tembel yükleme (yoksa None)."""
+        """fastembed (ONNX) modelini tembel yükleme (yoksa None). Bkz. SOZLESME §10."""
         if self._embedder is None and self.embedding_model_name:
             try:
-                from sentence_transformers import SentenceTransformer
+                from fastembed import TextEmbedding
 
-                self._embedder = SentenceTransformer(self.embedding_model_name)
+                kwargs: dict[str, Any] = {}
+                local = model_dir() / _LOCAL_EMBEDDING_DIR
+                if self.embedding_model_name == DEFAULT_EMBEDDING_MODEL and \
+                        (local / "model_optimized.onnx").is_file():
+                    # models/download.py ile sabit revizyondan indirilmiş, doğrulanmış dosyalar
+                    kwargs["specific_model_path"] = str(local)
+                self._embedder = TextEmbedding(model_name=self.embedding_model_name,
+                                               cache_dir=str(model_dir()), **kwargs)
             except ImportError:
                 logger.warning(
-                    "sentence-transformers kurulu değil; embedding atlanıyor "
+                    "fastembed kurulu değil; embedding atlanıyor "
                     "(pip install 'osiris-pipeline[embedding]')"
                 )
                 self._embedder = False
@@ -238,24 +257,25 @@ class ProcessingPipeline:
         return self._embedder or None
 
     def generate_embedding(self, text: str) -> list[float] | None:
-        """Semantik vektör üretir. Model yoksa None döner."""
+        """Semantik vektör üretir (L2-normalize). Model yoksa None döner."""
         if not text or not text.strip():
             return None
         model = self.embedder
         if model is None:
             return None
         try:
-            vec = model.encode(text[:8000], normalize_embeddings=True)
+            vec = next(iter(model.embed([text[:_MAX_EMBED_CHARS]])))
             floats = [float(x) for x in vec]
         except Exception as exc:  # noqa: BLE001
             logger.warning("Embedding üretilemedi: %s", exc)
             return None
-        import math
-
         if not floats or not all(math.isfinite(x) for x in floats):
             logger.warning("Embedding geçersiz değer içeriyor, atlandı")
             return None
-        return floats
+        norm = math.sqrt(sum(x * x for x in floats))
+        if norm == 0:
+            return None
+        return [x / norm for x in floats]
 
     def run(self, batch_size: int = 10) -> int:
         """Kuyruktan batch halinde kayıt işler. Depolanan kayıt sayısını döndürür.
@@ -436,6 +456,51 @@ class ProcessingPipeline:
         logger.info("Depolandı: %s (%s)", content_hash[:12], item_id)
         return item_id
 
+    def reembed(self, batch: int = 64, limit: int | None = None) -> int:
+        """Migration 005 sonrası: embedding_v2'si boş öğeleri doldurur (arka plan işi).
+
+        Kısa işlemlerle partiler halinde çalışır; yarıda kesilirse kaldığı yerden sürer.
+        Boş metinli öğeler atlanır (bir daha seçilmemeleri için model adı işaretlenir).
+        """
+        import psycopg
+
+        if not self.database_url or self.embedder is None:
+            raise RuntimeError("database_url ve kullanılabilir bir embedding modeli gerekli")
+        batch = max(1, min(int(batch), 1000))
+        done = 0
+        model_name = (self.embedding_model_name or "")[:200]
+        with psycopg.connect(self.database_url) as conn:
+            while limit is None or done < limit:
+                rows = conn.execute(
+                    "SELECT id::text, cleaned_content FROM items"
+                    " WHERE embedding_v2 IS NULL AND embedding_model IS NULL"
+                    " ORDER BY collected_at LIMIT %s", (batch,),
+                ).fetchall()
+                if not rows:
+                    break
+                for item_id, text in rows:
+                    vec = self.generate_embedding(text or "")
+                    if vec is not None and len(vec) == EMBEDDING_DIM:
+                        literal = "[" + ",".join(repr(float(x)) for x in vec) + "]"
+                        conn.execute("UPDATE items SET embedding_v2 = %s::vector, embedding_model = %s"
+                                     " WHERE id::text = %s", (literal, model_name, item_id))
+                    else:  # vektörlenemeyen (boş) öğe: tekrar seçilmesin
+                        conn.execute("UPDATE items SET embedding_model = %s WHERE id::text = %s",
+                                     (f"{model_name}#skip"[:200], item_id))
+                    done += 1
+                conn.commit()
+                logger.info("Yeniden vektörleştirme: %d öğe", done)
+        return done
+
+    def _has_embedding_v2(self, cur: Any) -> bool:
+        """Migration 005 uygulanmış mı? (Yalnızca olumlu sonuç önbelleklenir.)"""
+        if getattr(self, "_embedding_v2", False):
+            return True
+        cur.execute("SELECT 1 FROM information_schema.columns"
+                    " WHERE table_name = 'items' AND column_name = 'embedding_v2'")
+        self._embedding_v2 = cur.fetchone() is not None
+        return self._embedding_v2
+
     def _insert_item(self, cur: Any, item: dict[str, Any], content_hash: str,
                      tags: list[str], embedding: list[float] | None) -> str | None:
         """Item satırını yazar. Boyut uyumsuz embedding'i atlayıp vektörsüz yazar."""
@@ -454,6 +519,25 @@ class ProcessingPipeline:
             json.dumps(item.get("metadata") or {}, ensure_ascii=False),
             tags,
         )
+        if embedding is not None and len(embedding) == EMBEDDING_DIM and self._has_embedding_v2(cur):
+            # Migration 005: yeni sütun + hangi modelle üretildiği (karışık modelleri ayırmak için)
+            vector_literal = "[" + ",".join(repr(float(x)) for x in embedding) + "]"
+            cur.execute(
+                """
+                INSERT INTO items
+                    (source_id, raw_content, cleaned_content, url, title,
+                     language, collected_at, published_at, content_hash, metadata, tags,
+                     embedding_v2, embedding_model)
+                VALUES
+                    ((SELECT id FROM sources WHERE id = NULLIF(%s,'')::uuid), %s, %s, %s, %s,
+                     %s, NOW(), NULLIF(%s,'')::timestamptz, %s, %s::jsonb, %s, %s::vector, %s)
+                ON CONFLICT (content_hash) DO NOTHING
+                RETURNING id::text
+                """,
+                (*base_params, vector_literal, (self.embedding_model_name or "")[:200]),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
         if embedding is not None and self._embedding_usable is not False:
             vector_literal = "[" + ",".join(str(float(x)) for x in embedding) + "]"
             cur.execute("SAVEPOINT osiris_embedding")

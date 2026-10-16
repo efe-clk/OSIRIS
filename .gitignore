@@ -58,3 +58,8 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# ONNX modelleri (models/download.py indirir; repoya gömülmez)
+models/*
+!models/README.md
+!models/download.py

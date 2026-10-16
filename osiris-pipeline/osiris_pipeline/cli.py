@@ -4,6 +4,7 @@ Kullanım:
   osiris-pipeline --once                # kuyruğu bir kez boşalt
   osiris-pipeline --loop --interval 10  # sürekli çalış (Ctrl+C ile dur)
   osiris-pipeline --purge               # süresi dolan öğeleri sil (KVKK) ve çık
+  osiris-pipeline --reembed             # embedding_v2'si olmayan öğeleri vektörleştir ve çık
 """
 
 from __future__ import annotations
@@ -54,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interval", type=int, default=10, help="Tur arası saniye")
     parser.add_argument("--purge", action="store_true",
                         help="Saklama süresi dolan öğeleri silip çık (KVKK)")
+    parser.add_argument("--reembed", action="store_true",
+                        help="embedding_v2 boş öğeleri OSIRIS_EMBEDDING_MODEL ile doldurup çık")
     parser.add_argument("--purge-interval", type=int,
                         default=int(os.getenv("OSIRIS_RETENTION_INTERVAL", "3600")),
                         help="--loop'ta saklama temizliği aralığı, sn (0 = kapalı)")
@@ -80,6 +83,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     pipeline = build_pipeline(args)
+    if args.reembed:
+        if not args.database_url or not pipeline.embedding_model_name:
+            parser.error("--reembed için OSIRIS_DATABASE_URL ve OSIRIS_EMBEDDING_MODEL gerekli")
+        total = pipeline.reembed()
+        print(f"{total} öğe yeniden vektörleştirildi")
+        return 0
     if args.once or not args.loop:
         total = pipeline.run(batch_size=args.batch)
         print(f"{total} kayıt işlendi")

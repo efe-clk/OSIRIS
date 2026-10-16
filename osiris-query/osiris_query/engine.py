@@ -73,17 +73,20 @@ class QueryEngine:
         if len(embedding) > 4096 or not all(isinstance(x, (int, float)) for x in embedding):
             raise ValueError("embedding geçersiz")
         vector_literal = "[" + ",".join(str(float(x)) for x in embedding) + "]"
+        # R3/K5: 384 boyut → embedding_v2 (fastembed); diğerleri eski `embedding` sütunu.
+        # Sütun adı yalnızca bu iki sabitten seçilir (kullanıcı girdisi değil).
+        column = "embedding_v2" if len(embedding) == 384 else "embedding"
         with self._connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT id::text AS id, title, url,
                        LEFT(cleaned_content, 2000) AS cleaned_content, collected_at,
-                       1 - (embedding <=> %s::vector) AS similarity
+                       1 - ({column} <=> %s::vector) AS similarity
                 FROM items
-                WHERE embedding IS NOT NULL
-                ORDER BY embedding <=> %s::vector
+                WHERE {column} IS NOT NULL
+                ORDER BY {column} <=> %s::vector
                 LIMIT %s
-                """,
+                """,  # nosec B608 — sabit sütun adı
                 (vector_literal, vector_literal, limit),
             ).fetchall()
         return list(rows)

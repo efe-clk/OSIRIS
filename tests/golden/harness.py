@@ -245,3 +245,26 @@ def run_plugin(case: dict) -> tuple[dict, dict]:
 
 RUNNERS = {"hash": run_hash, "extract": run_extract, "audit": run_audit,
            "stix": run_stix, "graph": run_graph}
+
+
+# ---------------------------------------------------------------------- embedding
+def embedding_available() -> bool:
+    import os
+
+    root = Path(os.getenv("OSIRIS_MODEL_DIR", str(ROOT / "models")))
+    return (root / "embedding/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q/model_optimized.onnx").is_file()
+
+
+def run_embedding(case: dict, _cache: dict = {}) -> dict:  # noqa: B006 — model önbelleği
+    import os
+
+    from osiris_pipeline.pipeline import DEFAULT_EMBEDDING_MODEL, ProcessingPipeline
+
+    os.environ.setdefault("OSIRIS_MODEL_DIR", str(ROOT / "models"))
+    if "p" not in _cache:
+        p = ProcessingPipeline.__new__(ProcessingPipeline)
+        p.embedding_model_name, p._embedder = DEFAULT_EMBEDDING_MODEL, None
+        _cache["p"] = p
+    text = case["input"] if "input" in case else case["input_repeat"]["text"] * case["input_repeat"]["times"]
+    vec = _cache["p"].generate_embedding(text)
+    return {"vector": [round(x, 7) for x in vec]}

@@ -14,13 +14,12 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "langdetect>=1.0",
     "spacy>=3.7",
-    "pandas>=2.0",
 ]
 
 [project.optional-dependencies]
-# Semantik embedding (ağır: torch indirir). Kurulmazsa pipeline vektörsüz çalışır.
-# pip install "osiris-pipeline[embedding]"
-embedding = ["sentence-transformers>=2.2"]
+# Semantik embedding — fastembed (ONNX, torch YOK; model ~220 MB ilk kullanımda iner).
+# pip install "osiris-pipeline[embedding]"  ·  model: OSIRIS_EMBEDDING_MODEL
+embedding = ["fastembed>=0.8.1,<0.10"]
 
 [project.scripts]
 osiris-pipeline = "osiris_pipeline.cli:main"
