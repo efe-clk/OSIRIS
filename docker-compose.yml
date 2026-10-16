@@ -74,6 +74,41 @@ services:
       - "127.0.0.1:5678:5678"
 
 
+  # --- Karanlık ağ proxy'leri (profil: darknet) -------------------------------
+  # Yalnızca iç ağ: host'a port yayınlanmaz. tor/i2p plugin'leri bu adreslere
+  # OSIRIS_TOR_SOCKS / OSIRIS_I2P_HTTP_PROXY ile yönlenir (kullanıcı config'i
+  # başka bir proxy host'u seçemez). Başlatma: docker compose --profile darknet up -d
+  tor:
+    build:
+      context: ./deploy/tor
+    image: osiris-tor:0.1.0
+    container_name: osiris-tor
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *default-logging
+    volumes:
+      - tordata:/var/lib/tor
+    profiles: ["darknet"]
+
+  i2pd:
+    image: purplei2p/i2pd:release-2.61.0
+    container_name: osiris-i2pd
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *default-logging
+    command:
+      - --httpproxy.address=0.0.0.0
+      - --httpproxy.port=4444
+      - --socksproxy.enabled=false
+      - --http.address=127.0.0.1
+      - --sam.enabled=false
+      - --bob.enabled=false
+      - --i2cp.enabled=false
+      - --i2pcontrol.enabled=false
+    volumes:
+      - i2pddata:/home/i2pd/data
+    profiles: ["darknet"]
+
   # NOT: nginx.conf bu servis adlarına proxy yapar; tanımsız bırakılırsa
   # nginx DNS çözümlemede başarısız olur. Profillerle isteğe bağlı başlatılır.
   osiris-api:
@@ -97,6 +132,9 @@ services:
       OSIRIS_JWT_SECRET: ${OSIRIS_JWT_SECRET:-}
       OSIRIS_INSECURE_OPEN: ${OSIRIS_INSECURE_OPEN:-}
       OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
+      # Karanlık ağ proxy'leri (yalnızca darknet profili açıksa çalışır)
+      OSIRIS_TOR_SOCKS: ${OSIRIS_TOR_SOCKS:-tor:9050}
+      OSIRIS_I2P_HTTP_PROXY: ${OSIRIS_I2P_HTTP_PROXY:-i2pd:4444}
       OSIRIS_CORS_ORIGINS: http://localhost:3000
     ports:
       # Yalnızca localhost (dış erişim nginx üzerinden). 8000 dolu olabilir.
@@ -139,3 +177,5 @@ volumes:
   pgdata:
   redisdata:
   n8ndata:
+  tordata:
+  i2pddata:

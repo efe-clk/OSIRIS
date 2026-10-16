@@ -366,6 +366,8 @@ servisler:
   n8n:               # otomasyon (host 5678)
   osiris-api:        # REST API (127.0.0.1:8001 → 8000, profil: api/full)
   osiris-web-ui:     # arayüz (127.0.0.1:3001 → 3000, profil: ui/full)
+  tor:               # Tor SOCKS5 istemcisi (iç ağ :9050, profil: darknet)
+  i2pd:              # I2P HTTP proxy (iç ağ :4444, profil: darknet)
   nginx:             # ters proxy + TLS (:80, :8443)
 ```
 
@@ -513,6 +515,8 @@ Uyarı işleyiciler (e-posta/Telegram/webhook) `AlertManager.register_handler`'a
 | `OSIRIS_RETENTION_DAYS` | KVKK varsayılan saklama süresi, gün (180; 0 = kapalı) |
 | `OSIRIS_RETENTION_INTERVAL` | Pipeline döngüsünde temizlik aralığı, sn (3600; 0 = kapalı) |
 | `OSIRIS_USERNAME_DB_DIR` | username-search `sites_db` için ek izinli dizin |
+| `OSIRIS_TOR_SOCKS` | tor plugin'inin SOCKS5 proxy'si, `host:port` (compose: `tor:9050`) |
+| `OSIRIS_I2P_HTTP_PROXY` | i2p plugin'inin HTTP proxy'si, `host:port` (compose: `i2pd:4444`) |
 
 ### 16.3 Dağıtım Notları
 - Taze kurulum: `cp .env.example .env` (güçlü değerler üretin), `docker compose --profile full up -d --build`, `db/migrations/*.sql` dosyalarını sırayla uygulayın.

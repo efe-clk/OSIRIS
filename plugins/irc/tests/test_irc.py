@@ -59,3 +59,4 @@ def test_connects_to_vetted_ip_not_hostname(monkeypatch) -> None:
     res = irc.IrcCollector().collect({"server": "irc.example.com", "channels": ["#osint"]})
     assert res.success is True
     assert seen == [("93.184.216.34", 6667)]
+

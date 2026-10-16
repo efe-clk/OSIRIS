@@ -1,0 +1,15 @@
+# OSIRIS Tor istemcisi — SOCKS yalnızca Docker iç ağından (compose ağı) kabul edilir.
+# Host'a port YAYINLANMAZ (docker-compose.yml'de ports yok).
+DataDirectory /var/lib/tor
+SocksPort 0.0.0.0:9050
+SocksPolicy accept 10.0.0.0/8
+SocksPolicy accept 172.16.0.0/12
+SocksPolicy accept 192.168.0.0/16
+SocksPolicy accept 127.0.0.0/8
+SocksPolicy reject *
+# Relay / çıkış düğümü olmayı açıkça kapat
+ORPort 0
+ExitRelay 0
+ExitPolicy reject *:*
+ClientOnly 1
+Log notice stdout

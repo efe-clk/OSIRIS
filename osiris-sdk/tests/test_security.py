@@ -264,3 +264,32 @@ def test_obfuscated_loopback_blocked() -> None:
     for url in ["http://2130706433/", "http://0x7f.0.0.1/", "http://0177.0.0.1/"]:
         with pytest.raises(ValueError):
             assert_safe_url(url)
+
+
+def test_resolve_proxy_without_operator_env(monkeypatch) -> None:
+    from osiris.security import resolve_proxy
+
+    monkeypatch.delenv("OSIRIS_TOR_SOCKS", raising=False)
+    assert resolve_proxy(None, None, "OSIRIS_TOR_SOCKS", 9050, "SOCKS5") == ("127.0.0.1", 9050)
+    assert resolve_proxy("::1", "9150", "OSIRIS_TOR_SOCKS", 9050, "SOCKS5") == ("::1", 9150)
+    for host, port in (("tor", 9050), ("10.0.0.5", 9050), ("127.0.0.1", 0), ("127.0.0.1", "x")):
+        with pytest.raises(ValueError):
+            resolve_proxy(host, port, "OSIRIS_TOR_SOCKS", 9050, "SOCKS5")
+
+
+def test_resolve_proxy_operator_env_wins(monkeypatch) -> None:
+    from osiris.security import resolve_proxy
+
+    monkeypatch.setenv("OSIRIS_TOR_SOCKS", "tor:9050")
+    # Boş / localhost / aynı host → operatör proxy'si (UI'nin önceden doldurduğu localhost dahil)
+    for host in (None, "", "127.0.0.1", "tor"):
+        assert resolve_proxy(host, 1234, "OSIRIS_TOR_SOCKS", 9050, "SOCKS5") == ("tor", 9050)
+    # Kullanıcı başka bir host seçemez (iç ağ taraması / proxy kaçırma)
+    with pytest.raises(ValueError, match="OSIRIS_TOR_SOCKS"):
+        resolve_proxy("evil.example.com", 9050, "OSIRIS_TOR_SOCKS", 9050, "SOCKS5")
+    monkeypatch.setenv("OSIRIS_TOR_SOCKS", "[fd00::5]:9050")
+    assert resolve_proxy(None, None, "OSIRIS_TOR_SOCKS", 9050, "SOCKS5") == ("fd00::5", 9050)
+    for bad in ("tor", "tor:", ":9050", "tor:99999", "tor:abc"):
+        monkeypatch.setenv("OSIRIS_TOR_SOCKS", bad)
+        with pytest.raises(ValueError):
+            resolve_proxy(None, None, "OSIRIS_TOR_SOCKS", 9050, "SOCKS5")

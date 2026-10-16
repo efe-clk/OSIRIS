@@ -7,6 +7,7 @@ Tüm collector plugin'leri ve API bu modülü kullanmalıdır.
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 from urllib.parse import urlparse
 
@@ -273,3 +274,42 @@ def fetch_url(session, method: str, url: str, *, allow_onion: bool = False,
             pass
         resp.url = current
         return resp
+
+
+_LOCAL_PROXY_HOSTS = frozenset({"127.0.0.1", "::1"})
+
+
+def resolve_proxy(cfg_host: object, cfg_port: object, env_var: str,
+                  default_port: int, label: str) -> tuple[str, int]:
+    """Tor/I2P proxy adresini seçer; kullanıcı config'i rastgele host'a yönlendiremez.
+
+    - Operatör ``env_var``'ı (``host:port``) tanımladıysa HER ZAMAN o kullanılır
+      (Docker'da proxy ayrı bir konteynerdedir). Config yalnızca boş, localhost
+      veya aynı host olabilir; başka bir host → ValueError.
+    - Tanımlı değilse eski davranış: host yalnızca localhost, port config'ten.
+    """
+    env = os.getenv(env_var, "").strip()
+    host_in = "" if cfg_host in (None, "") else str(cfg_host).strip()
+    if env:
+        env_host, sep, env_port_s = env.rpartition(":")
+        try:
+            env_port = int(env_port_s)
+        except ValueError as exc:
+            raise ValueError(f"{env_var} 'host:port' biçiminde olmalı") from exc
+        if not sep or not env_host or not 1 <= env_port <= _MAX_PORT:
+            raise ValueError(f"{env_var} 'host:port' biçiminde olmalı")
+        env_host = env_host.strip("[]")
+        if host_in and host_in not in _LOCAL_PROXY_HOSTS and host_in != env_host:
+            raise ValueError(f"{label} proxy host'u yalnızca operatörün belirlediği "
+                             f"{env_var} olabilir")
+        return env_host, env_port
+    host = host_in or "127.0.0.1"
+    if host not in _LOCAL_PROXY_HOSTS:
+        raise ValueError(f"{label} proxy host yalnızca localhost olabilir")
+    try:
+        port = int(cfg_port) if cfg_port not in (None, "") else default_port
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Geçersiz {label} proxy portu") from exc
+    if not 1 <= port <= _MAX_PORT:
+        raise ValueError(f"Geçersiz {label} proxy portu")
+    return host, port

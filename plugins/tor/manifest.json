@@ -6,11 +6,23 @@
   "author": "OSIRIS Team",
   "description": "Tor ağı üzerinden .onion site toplama",
   "config_schema": {
-    "url": {"type": "string", "required": true},
-    "socks5_host": {"type": "string", "default": "127.0.0.1"},
-    "socks5_port": {"type": "integer", "default": 9050}
+    "url": {
+      "type": "string",
+      "required": true
+    },
+    "socks5_host": {
+      "type": "string",
+      "description": "Boş bırakın: operatörün OSIRIS_TOR_SOCKS ayarı (Docker'da) ya da localhost kullanılır"
+    },
+    "socks5_port": {
+      "type": "integer",
+      "description": "Boş bırakın: operatörün OSIRIS_TOR_SOCKS ayarı (Docker'da) ya da localhost kullanılır"
+    }
   },
-  "capabilities": ["html", "text"],
+  "capabilities": [
+    "html",
+    "text"
+  ],
   "requires_proxy": true,
   "schedule_default": "0 */12 * * *"
 }

@@ -7,7 +7,7 @@ from typing import Any
 import requests
 from bs4 import BeautifulSoup
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
-from osiris.security import fetch_url, safe_title
+from osiris.security import fetch_url, resolve_proxy, safe_title
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
 _MAX_BYTES = 2_000_000
@@ -20,15 +20,10 @@ class I2PCollector(BaseCollector):
 
     def _session(self, cfg: dict[str, Any]) -> requests.Session:
         session = requests.Session()
-        host = str(cfg.get("http_proxy_host", "127.0.0.1"))
-        try:
-            port = int(cfg.get("http_proxy_port", 4444))
-        except (TypeError, ValueError) as exc:
-            raise ValueError("Geçersiz I2P proxy portu") from exc
-        if host not in ("127.0.0.1", "::1"):
-            raise ValueError("I2P proxy host yalnızca localhost olabilir")
-        if not 1 <= port <= 65535:
-            raise ValueError("Geçersiz I2P proxy portu")
+        host, port = resolve_proxy(cfg.get("http_proxy_host"), cfg.get("http_proxy_port"),
+                                   "OSIRIS_I2P_HTTP_PROXY", 4444, "I2P")
+        if ":" in host:
+            host = f"[{host}]"
         proxy = f"http://{host}:{port}"
         session.proxies = {"http": proxy, "https": proxy}
         session.headers.update(_HEADERS)

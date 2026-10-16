@@ -7,7 +7,7 @@ from typing import Any
 import requests
 from bs4 import BeautifulSoup
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
-from osiris.security import fetch_url, safe_title
+from osiris.security import fetch_url, resolve_proxy, safe_title
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
 _MAX_BYTES = 2_000_000
@@ -20,15 +20,10 @@ class TorCollector(BaseCollector):
 
     def _session(self, cfg: dict[str, Any]) -> requests.Session:
         session = requests.Session()
-        try:
-            host = str(cfg.get("socks5_host", "127.0.0.1"))
-            port = int(cfg.get("socks5_port", 9050))
-        except (TypeError, ValueError):
-            host, port = "127.0.0.1", 9050
-        if host not in ("127.0.0.1", "::1"):
-            raise ValueError("SOCKS5 host yalnızca localhost olabilir")
-        if not 1 <= port <= 65535:
-            raise ValueError("Geçersiz SOCKS5 portu")
+        host, port = resolve_proxy(cfg.get("socks5_host"), cfg.get("socks5_port"),
+                                   "OSIRIS_TOR_SOCKS", 9050, "SOCKS5")
+        if ":" in host:
+            host = f"[{host}]"
         proxy = f"socks5h://{host}:{port}"
         session.proxies = {"http": proxy, "https": proxy}
         session.headers.update(_HEADERS)

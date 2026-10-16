@@ -371,6 +371,8 @@ services:
   n8n:               # automation (host 5678)
   osiris-api:        # REST API (127.0.0.1:8001 → 8000, profile: api/full)
   osiris-web-ui:     # frontend (127.0.0.1:3001 → 3000, profile: ui/full)
+  tor:               # Tor SOCKS5 client (internal :9050, profile: darknet)
+  i2pd:              # I2P HTTP proxy (internal :4444, profile: darknet)
   nginx:             # reverse proxy + TLS (:80, :8443)
 ```
 
@@ -518,6 +520,8 @@ Alert handlers (email/Telegram/webhook) plug into `AlertManager.register_handler
 | `OSIRIS_RETENTION_DAYS` | KVKK default retention, days (180; 0 = off) |
 | `OSIRIS_RETENTION_INTERVAL` | Purge interval in the pipeline loop, s (3600; 0 = off) |
 | `OSIRIS_USERNAME_DB_DIR` | Extra allowed directory for username-search `sites_db` |
+| `OSIRIS_TOR_SOCKS` | SOCKS5 proxy for the tor plugin, `host:port` (compose: `tor:9050`) |
+| `OSIRIS_I2P_HTTP_PROXY` | HTTP proxy for the i2p plugin, `host:port` (compose: `i2pd:4444`) |
 
 ### 16.3 Deployment Notes
 - Fresh install: `cp .env.example .env` (generate strong values), `docker compose --profile full up -d --build`, apply `db/migrations/*.sql` in order.

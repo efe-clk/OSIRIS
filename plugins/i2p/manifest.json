@@ -6,11 +6,23 @@
   "author": "OSIRIS Team",
   "description": "I2P ağı üzerinden eepsite toplama",
   "config_schema": {
-    "url": {"type": "string", "required": true},
-    "http_proxy_host": {"type": "string", "default": "127.0.0.1"},
-    "http_proxy_port": {"type": "integer", "default": 4444}
+    "url": {
+      "type": "string",
+      "required": true
+    },
+    "http_proxy_host": {
+      "type": "string",
+      "description": "Boş bırakın: operatörün OSIRIS_I2P_HTTP_PROXY ayarı (Docker'da) ya da localhost kullanılır"
+    },
+    "http_proxy_port": {
+      "type": "integer",
+      "description": "Boş bırakın: operatörün OSIRIS_I2P_HTTP_PROXY ayarı (Docker'da) ya da localhost kullanılır"
+    }
   },
-  "capabilities": ["html", "text"],
+  "capabilities": [
+    "html",
+    "text"
+  ],
   "requires_proxy": true,
   "schedule_default": "0 */12 * * *"
 }
