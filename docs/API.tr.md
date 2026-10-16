@@ -78,6 +78,7 @@ Roller yükselir: `viewer` → `analyst` → `admin`. Bilinmeyen rol reddedilir.
 | `POST /sources`, `DELETE /sources/*`, `/sources/*/collect` | ✗ | ✓ | ✓ |
 | `POST /saved-queries`, `DELETE`, `/alerts/test` | ✗ | ✓ | ✓ |
 | `POST /graph/relation`, `/reports/markdown` | ✗ | ✓ | ✓ |
+| `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run` | ✗ | ✗ | ✓ |
 
 ## 3. Uzlaşımlar
 
@@ -148,7 +149,8 @@ curl -X POST https://<sunucu>:8443/api/sources -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Örnek RSS","plugin_id":"rss","network_type":"rss",
        "url":"https://example.com/rss","schedule":"*/15 * * * *",
-       "config":{"feed_url":"https://example.com/rss","max_items":50}}'
+       "config":{"feed_url":"https://example.com/rss","max_items":50},
+       "retention_days":90}'
 # → {"id":"..."}
 
 # Tek seferlik çalıştır (source_id işlenir → sources/source_metrics'e sağlık düşer)
@@ -160,6 +162,8 @@ curl -X DELETE https://<sunucu>:8443/api/sources/<id> -H "X-API-Key: <a>"
 
 Kaynak satırları sağlık taşır: `last_crawled_at`, `last_success_at`, `failure_count`, `avg_response_ms`.
 
+`retention_days` (KVKK): verilmez/`null` → sunucu varsayılanı (`OSIRIS_RETENTION_DAYS`, 180), `0` → süreyle silinmez, `1-36500` → N günden eski öğeler silinir. Migration 004 henüz uygulanmadıysa `503` döner.
+
 ## 9. Öğeler & Varlıklar
 
 ```bash
@@ -168,6 +172,26 @@ curl -H "X-API-Key: <a>" https://<sunucu>:8443/api/items/<id>        # + gömül
 curl -H "X-API-Key: <a>" "https://<sunucu>:8443/api/entities/top?entity_type=domain&limit=20"
 # → [{"type":"domain","value":"example.com","mentions":12,"last_seen":"..."}]
 ```
+
+### Gizlilik / silme (KVKK, yalnızca admin)
+
+```bash
+# Tek öğeyi sil (ve artık hiçbir öğeye bağlı olmayan varlıkları)
+curl -X DELETE https://<sunucu>:8443/api/items/<id> -H "X-API-Key: <admin>"
+# → {"status":"deleted","items_deleted":1,"entities_deleted":2}
+
+# İlgili kişiyi sil: varlık + onu anan tüm öğeler + aynı adlı graf kenarları
+curl -X POST https://<sunucu>:8443/api/entities/erase -H "X-API-Key: <admin>" \
+  -H 'Content-Type: application/json' \
+  -d '{"entity_type":"email","value":"ali@example.com","delete_items":true}'
+# → {"items_deleted":4,"entities_deleted":3,"edges_deleted":1}
+
+# Saklama temizliğini hemen çalıştır (normalde osiris-pipeline --loop yapar)
+curl -X POST https://<sunucu>:8443/api/admin/retention/run -H "X-API-Key: <admin>"
+# → {"items_deleted":120,"entities_deleted":37,"default_days":180}
+```
+
+Değer eşleşmesi büyük/küçük harf duyarsızdır. Denetim kaydına silinen değer değil, yalnızca `value_sha256` yazılır.
 
 ## 10. Graf
 
@@ -221,6 +245,7 @@ curl -H "X-API-Key: <a>" https://<sunucu>:8443/api/stats
 | 401 | Eksik/geçersiz kimlik |
 | 403 | Kimlik geçerli, rol yetersiz |
 | 404 | Bilinmeyen plugin/kaynak/öğe/anahtar veya bozuk UUID |
+| 409 | Kaynak devre dışı (`/sources/{id}/collect`) |
 | 413 | Config nesnesi çok büyük |
 | 422 | Şema ihlali (ayrıntı `detail` dizisinde) |
 | 500 | Sunucu/DB hatası (iç detay sızmaz) |
@@ -233,5 +258,6 @@ Nginx'te zorunlu: `/api/*` üzerinde `10 istek/sn` (taşma 20). Anahtar başına
 
 ## 16. Değişiklikler
 
+- **Yayımlanmadı (Rust R2)** — KVKK: `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run`, kaynaklarda `retention_days`; `OSIRIS_API_KEY` olmadan başlamaz; JWT sırrı API anahtarına düşmez (`/auth/token` → 503); audit zinciri v2 (RFC 8785).
 - **0.2.0** — listelerde sayfalama + filtreler; `GET /items/{id}` (+varlıklar), `GET /entities/top`, `POST /collect/batch`; UUID-güvenli id yolları; OpenAPI etiket/özetleri; `q` filtresinde LIKE-joker kaçışı.
 - **0.1.x** — sources CRUD + çalıştırma tetikleme, saved-queries CRUD, `/alerts/test`, `/reports/markdown`, `/stats`, `/items/recent`, JWT + RBAC, `/auth/keys`.

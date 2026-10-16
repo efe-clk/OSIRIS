@@ -78,6 +78,7 @@ Roles ascend: `viewer` → `analyst` → `admin`. Unknown roles are denied.
 | `POST /sources`, `DELETE /sources/*`, `/sources/*/collect` | ✗ | ✓ | ✓ |
 | `POST /saved-queries`, `DELETE`, `/alerts/test` | ✗ | ✓ | ✓ |
 | `POST /graph/relation`, `/reports/markdown` | ✗ | ✓ | ✓ |
+| `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run` | ✗ | ✗ | ✓ |
 
 ## 3. Conventions
 
@@ -148,7 +149,8 @@ curl -X POST https://<host>:8443/api/sources -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Örnek RSS","plugin_id":"rss","network_type":"rss",
        "url":"https://example.com/rss","schedule":"*/15 * * * *",
-       "config":{"feed_url":"https://example.com/rss","max_items":50}}'
+       "config":{"feed_url":"https://example.com/rss","max_items":50},
+       "retention_days":90}'
 # → {"id":"..."}
 
 # Run once (records source_id → health metrics land in sources/source_metrics)
@@ -160,6 +162,8 @@ curl -X DELETE https://<host>:8443/api/sources/<id> -H "X-API-Key: <k>"
 
 Source rows carry health: `last_crawled_at`, `last_success_at`, `failure_count`, `avg_response_ms`.
 
+`retention_days` (KVKK): omitted/`null` → server default (`OSIRIS_RETENTION_DAYS`, 180), `0` → never expire, `1-36500` → items older than N days are purged. Returns `503` if migration 004 is not applied yet.
+
 ## 9. Items & Entities
 
 ```bash
@@ -168,6 +172,26 @@ curl -H "X-API-Key: <k>" https://<host>:8443/api/items/<id>        # + embedded 
 curl -H "X-API-Key: <k>" "https://<host>:8443/api/entities/top?entity_type=domain&limit=20"
 # → [{"type":"domain","value":"example.com","mentions":12,"last_seen":"..."}]
 ```
+
+### Privacy / erasure (KVKK, admin only)
+
+```bash
+# Delete one item (and entities no longer referenced by any item)
+curl -X DELETE https://<host>:8443/api/items/<id> -H "X-API-Key: <admin>"
+# → {"status":"deleted","items_deleted":1,"entities_deleted":2}
+
+# Erase a data subject: entity + every item mentioning it + graph edges with that name
+curl -X POST https://<host>:8443/api/entities/erase -H "X-API-Key: <admin>" \
+  -H 'Content-Type: application/json' \
+  -d '{"entity_type":"email","value":"ali@example.com","delete_items":true}'
+# → {"items_deleted":4,"entities_deleted":3,"edges_deleted":1}
+
+# Run retention purge now (normally done by osiris-pipeline --loop)
+curl -X POST https://<host>:8443/api/admin/retention/run -H "X-API-Key: <admin>"
+# → {"items_deleted":120,"entities_deleted":37,"default_days":180}
+```
+
+Value matching is case-insensitive. The audit log records only `value_sha256`, never the erased value.
 
 ## 10. Graph
 
@@ -221,6 +245,7 @@ curl -H "X-API-Key: <k>" https://<host>:8443/api/stats
 | 401 | Missing/invalid credential |
 | 403 | Valid credential, insufficient role |
 | 404 | Unknown plugin/source/item/key, or malformed UUID |
+| 409 | Source disabled (`/sources/{id}/collect`) |
 | 413 | Config object too large |
 | 422 | Schema violation (see `detail` array) |
 | 500 | Server/DB failure (no internals leaked) |
@@ -233,5 +258,6 @@ Enforced at Nginx: `10 req/s` (burst 20) on `/api/*`. No per-key quotas yet — 
 
 ## 16. Changelog
 
+- **Unreleased (Rust R2)** — KVKK: `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run`, `retention_days` on sources; refuses to start without `OSIRIS_API_KEY`; JWT secret has no API-key fallback (`/auth/token` → 503); audit chain v2 (RFC 8785).
 - **0.2.0** — pagination + filters on lists; `GET /items/{id}` (+entities), `GET /entities/top`, `POST /collect/batch`; UUID-safe id paths; OpenAPI tags/summaries; LIKE-wildcard escaping on `q`.
 - **0.1.x** — sources CRUD + collect trigger, saved-queries CRUD, `/alerts/test`, `/reports/markdown`, `/stats`, `/items/recent`, JWT + RBAC, `/auth/keys`.

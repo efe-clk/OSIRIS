@@ -110,7 +110,10 @@ jobs:
           from pathlib import Path
           bad = []
           for f in [*Path('.').glob('README*.md'), *Path('docs').glob('*.md')]:
-              for m in re.finditer(r'\[[^\]]*\]\(([^)]+)\)', f.read_text()):
+              # Kod blokları ve satır içi kod bağlantı değildir (regex vb. yanlış pozitif verir)
+              text = re.sub(r'```.*?```', '', f.read_text(), flags=re.S)
+              text = re.sub(r'`[^`\n]*`', '', text)
+              for m in re.finditer(r'\[[^\]]*\]\(([^)]+)\)', text):
                   link = m.group(1)
                   if link.startswith(('http', '#', 'mailto:')):
                       continue

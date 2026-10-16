@@ -520,6 +520,9 @@ Alert handlers (email/Telegram/webhook) plug into `AlertManager.register_handler
 | `OSIRIS_INSECURE_OPEN` | `1` enables keyless open mode (trusted network only) |
 | `OSIRIS_JWT_SECRET` | JWT signing secret (no fallback; unset → `/auth/token` 503) |
 | `OSIRIS_CORS_ORIGINS` | Allowed browser origins |
+| `OSIRIS_RETENTION_DAYS` | KVKK default retention, days (180; 0 = off) |
+| `OSIRIS_RETENTION_INTERVAL` | Purge interval in the pipeline loop, s (3600; 0 = off) |
+| `OSIRIS_USERNAME_DB_DIR` | Extra allowed directory for username-search `sites_db` |
 
 ### 16.3 Deployment Notes
 - Fresh install: `cp .env.example .env` (generate strong values), `docker compose --profile full up -d --build`, apply `db/migrations/*.sql` in order.

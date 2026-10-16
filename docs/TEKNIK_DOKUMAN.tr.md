@@ -515,6 +515,9 @@ Uyarı işleyiciler (e-posta/Telegram/webhook) `AlertManager.register_handler`'a
 | `OSIRIS_INSECURE_OPEN` | `1` ise anahtarsız açık mod (yalnızca güvenilir ağ) |
 | `OSIRIS_JWT_SECRET` | JWT imza sırrı (yedeği yok; yoksa `/auth/token` 503) |
 | `OSIRIS_CORS_ORIGINS` | İzinli tarayıcı kaynakları |
+| `OSIRIS_RETENTION_DAYS` | KVKK varsayılan saklama süresi, gün (180; 0 = kapalı) |
+| `OSIRIS_RETENTION_INTERVAL` | Pipeline döngüsünde temizlik aralığı, sn (3600; 0 = kapalı) |
+| `OSIRIS_USERNAME_DB_DIR` | username-search `sites_db` için ek izinli dizin |
 
 ### 16.3 Dağıtım Notları
 - Taze kurulum: `cp .env.example .env` (güçlü değerler üretin), `docker compose --profile full up -d --build`, `db/migrations/*.sql` dosyalarını sırayla uygulayın.

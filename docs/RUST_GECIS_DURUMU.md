@@ -1,12 +1,12 @@
 # OSIRIS — Rust Geçişi Durumu
 
-Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANTER.md](RUST_GECIS_ENVANTER.md)
+Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANTER.md](RUST_GECIS_ENVANTER.md) · Sözleşme: [SOZLESME.md](SOZLESME.md)
 
 | Faz | Durum | Dal |
 |---|---|---|
 | R0 — Envanter | ✅ Tamamlandı, kararlar onaylandı | `master` |
 | R1 — Doküman + güvenlik düzeltmeleri | ✅ Tamamlandı | `master` |
-| R2 — Geçiş sözleşmesi | ⏳ Başlamadı | — |
+| R2 — Geçiş sözleşmesi | ✅ Tamamlandı | `master` |
 | R3–R7 | ⏳ Başlamadı | — |
 
 ## Kararlar (kullanıcı onayı, 2026-10-16)
@@ -50,3 +50,41 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
 **⚠ Canlı kurulum için dağıtım notu**
 - Canlı `.env` dosyasında `OSIRIS_API_KEY` boşsa, yeni imajla `osiris-api` **başlamaz**. Dağıtımdan önce bir anahtar atanmalı (ya da bilerek `OSIRIS_INSECURE_OPEN=1` verilmeli).
 - Önceki compose `OSIRIS_JWT_SECRET` değerini konteynere geçirmiyordu, yani canlıdaki JWT'ler API anahtarıyla imzalanıyordu. Yeni sürümde `.env` içine ayrı bir `OSIRIS_JWT_SECRET` eklenmezse `/auth/token` 503 döner ve eski jetonlar geçersiz olur. Web UI ve n8n `X-API-Key` kullandığı için bundan etkilenmez.
+
+## R2 (2026-10-16)
+
+**Yapılanlar**
+- **Ön madde — `items.source_id`:** collector kaynak kimliğini kuyruk mesajına koyuyor, pipeline öğeye yazıyor. Kaynak bu arada silindiyse foreign key hatası yerine NULL yazılıyor.
+- **`docs/SOZLESME.md`:** content_hash (bugünkü davranış: NFC yok; Python `\s` kümesi açıkça listelendi, U+001C–001F Rust'tan farklı), audit v1/v2, STIX UUID'leri, plugin, kuyruk, KVKK, API, regex ve graf sözleşmeleri.
+- **`schemas/`:** manifest, CollectedItem, CollectionResult ve kuyruk mesajı için JSON Schema. 11 manifest, fixture sonuçları ve gerçek kuyruk mesajı bu şemalara karşı doğrulanıyor.
+- **Audit `chain_version=2`:** RFC 8785 (JCS) kullanılıyor (`rfc8785` 0.1.4). Migration 003 eklendi, karışık v1/v2 zincir doğrulanıyor. jsonb'nin sayıları normalize etmesi doğrulamayı kırmıyor (gerçek PG testinde kanıtlandı).
+- **STIX:** saat ve bundle kimliği dışarıdan verilebilir, böylece bayt bayt fixture mümkün.
+- **`fixtures/`:** hash (23), extract (10), audit (3 zincir), stix (2), graph (7) ve 11 plugin için 23 senaryo. `tests/golden` altında harness, `generate.py --check` ve testler var.
+- **`tests/contract/`:** kara kutu API paketi (144 test). Gerçek bir API'ye karşı hepsi geçti. Kasıtlı olarak anahtarsız açık modda çalıştırılan API'de 60 test kırıldı, yani paket gerçekten ayırt ediyor.
+- **`tests/integration/`:** gerçek PostgreSQL testleri (yalnızca `*_test` DB'de çalışıyor). CI'a PostgreSQL ve Redis servisli bir `integration` işi eklendi. Bu iş migration'ları iki kez uygulayıp entegrasyon ve sözleşme testlerini koşuyor.
+- **K7 KVKK:**
+  - `sources.retention_days` (migration 004) ve `OSIRIS_RETENTION_DAYS` eklendi.
+  - Temizlik pipeline'da çalışıyor: `--purge` ve döngü içinde periyodik olarak.
+  - Yeni admin uçları: `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run`.
+  - Hiçbir öğeye bağlı kalmayan varlıklar da siliniyor. Audit kaydına silinen değer değil, yalnızca SHA-256 özeti yazılıyor.
+- **username-search temposu:** `rate_per_sec` (varsayılan 10/sn) ve `per_host_interval_ms` (varsayılan 1000) eklendi.
+- Testler 186 → 274 birim testi + 6 entegrasyon + 144 sözleşme testi. Ruff temiz, kapsam eşiği sağlanıyor.
+
+**Sapmalar ve ek bulgular**
+- **Migration numaraları:** plan `003_retention.sql` diyordu. Audit sürümü 003, saklama 004 oldu. R3'teki embedding migration'ı artık **005**.
+- **Golden'ların ortaya çıkardığı iki varlık çıkarma hatası düzeltildi:** Domain regex büyük harfli domain'leri hiç bulmuyordu. ETH adresinin içindeki rakamlar telefon numarası sayılıyordu. Bunlar `content_hash`'i etkilemiyor.
+- **E13 (yeni güvenlik bulgusu):** username-search'teki `sites_db`, sunucuda herhangi bir dosya yolunu kabul ediyordu (analyst rolüyle rastgele JSON okuma). Artık yalnızca plugin dizini veya `OSIRIS_USERNAME_DB_DIR` altındaki dosyalar kabul ediliyor.
+- KVKK uçları ve saklama modülü SDK'ya (`osiris/retention.py`) kondu. API imajı `osiris-pipeline`'ı (spaCy, pandas) kurmuyor.
+- **R5 için karar maddesi:** `rest-api` ve `shodan`, `raw_content` alanına Python repr çıktısı yazıyor (SOZLESME §4). Rust bunu ya birebir taklit edecek ya da JSON'a geçilecek. JSON'a geçmek bu iki plugin'in yeni öğelerinin hash'ini değiştirir.
+- **Öneri:** `beautifulsoup4` sürümü sabitlenmeli (`>=4.12,<5`). bs4'ün davranışı content_hash'in parçası.
+
+**⚠ Canlı kurulum için dağıtım adımları (R2)**
+1. Migration'ları sırayla uygula (ikisi de yalnızca ekleme yapıyor ve tekrar çalıştırılabilir):
+   `docker exec -i osiris-postgresql psql -U osiris -d osiris -v ON_ERROR_STOP=1 < db/migrations/003_audit_chain_version.sql`, ardından aynısını `004_retention.sql` için.
+   Sırası önemli değil: Migration'lar uygulanmadan API güncellenirse audit v1'e düşer, `/sources` da `retention_days` olmadan çalışır.
+2. `.env` içinde `OSIRIS_RETENTION_DAYS` değerini gözden geçir. Varsayılan **180 gün**. Temizlik ilk kez çalıştığında 180 günden eski öğeler **kalıcı olarak silinir**. İstemiyorsan önce `0` yap.
+3. Temizliği çalıştıran bir pipeline servisi compose'da yok (E1). İki yol var: `osiris-pipeline --loop` çalıştırmak ya da n8n/cron ile `POST /api/admin/retention/run` uç noktasını tetiklemek.
+4. Sözleşme testleri canlıya karşı güvenle çalıştırılabilir (`OSIRIS_CONTRACT_DESTRUCTIVE` verme): `OSIRIS_BASE_URL=https://<sunucu>:8443/api OSIRIS_CONTRACT_API_KEY=… OSIRIS_CONTRACT_VERIFY_TLS=0 pytest tests/contract`. Testler `contract-*` adlı kullanıcılar bırakır, anahtarları iptal edilmiş olur.
+
+**Kalanlar**
+- E1 (açık): canlıda `osiris:raw_items` kuyruğunu ne boşaltıyor?

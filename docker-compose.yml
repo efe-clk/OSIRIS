@@ -127,6 +127,7 @@ services:
       OSIRIS_API_KEY: ${OSIRIS_API_KEY:-}
       OSIRIS_JWT_SECRET: ${OSIRIS_JWT_SECRET:-}
       OSIRIS_INSECURE_OPEN: ${OSIRIS_INSECURE_OPEN:-}
+      OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
       OSIRIS_CORS_ORIGINS: http://localhost:3000
     ports:
       # Yalnızca localhost (dış erişim nginx üzerinden). 8000 dolu olabilir.
