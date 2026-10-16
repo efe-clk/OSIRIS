@@ -55,7 +55,7 @@ def test_queue_message_matches_schema() -> None:
     v = _validator("queue_message.schema.json")
     for cfg in ({}, {"source_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301"}):
         mgr.run_collection("p", cfg)
-        v.validate(json.loads(mgr.redis.rpush.call_args[0][1]))
+        v.validate(json.loads(mgr.redis.xadd.call_args[0][1]["data"]))
 
 
 def test_schema_rejects_bad_manifest() -> None:

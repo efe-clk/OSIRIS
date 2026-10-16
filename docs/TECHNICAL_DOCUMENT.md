@@ -157,7 +157,7 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 |-----------|-----|
 | **PostgreSQL 16** | Primary relational store |
 | **pgvector** | Embeddings — semantic search |
-| **Redis** | Cache + `osiris:raw_items` queue + `osiris:alerts` pub/sub |
+| **Redis** | Cache + `osiris:stream:raw_items` queue (Streams, at-least-once) + `osiris:alerts` pub/sub |
 | **TimescaleDB** | Optional; `source_metrics` hypertable when present (graceful fallback) |
 
 ### 4.3 Interface Technologies

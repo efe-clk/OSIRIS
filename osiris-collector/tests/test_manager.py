@@ -56,7 +56,7 @@ def test_run_collection_success_queues_items() -> None:
     mgr.plugins["ok"] = OkPlugin()
     result = mgr.run_collection("ok", {})
     assert result.success and len(result.items) == 1
-    assert mgr.redis.rpush.call_count == 1
+    assert mgr.redis.xadd.call_count == 1
 
 
 def test_run_collection_unknown_plugin() -> None:
@@ -76,7 +76,7 @@ def test_run_collection_failure_and_crash() -> None:
     mgr = make_manager()
     mgr.plugins["fail"] = FailPlugin()
     assert not mgr.run_collection("fail", {}).success
-    assert mgr.redis.rpush.call_count == 0
+    assert mgr.redis.xadd.call_count == 0
     mgr.plugins["crash"] = CrashPlugin()
     result = mgr.run_collection("crash", {})
     assert not result.success and "plugin hatası" in (result.error or "")
@@ -94,14 +94,14 @@ def test_run_collection_oversize_and_serialize_skip() -> None:
     mgr.plugins["big"] = big
     result = mgr.run_collection("big", {})
     assert result.success  # öğe atlanır ama görev başarılı
-    assert mgr.redis.rpush.call_count == 0
+    assert mgr.redis.xadd.call_count == 0
 
 
 def test_run_collection_redis_error() -> None:
     mgr = make_manager()
     import redis as redis_lib
 
-    mgr.redis.rpush.side_effect = redis_lib.RedisError("down")
+    mgr.redis.xadd.side_effect = redis_lib.RedisError("down")
     mgr.plugins["ok"] = OkPlugin()
     result = mgr.run_collection("ok", {})
     assert not result.success and "kuyruk" in (result.error or "")
@@ -207,7 +207,7 @@ def test_run_collection_unserializable_item() -> None:
     mgr.plugins["weird"] = Weird()
     result = mgr.run_collection("weird", {})
     assert result.success  # öğe atlanır, görev başarılı
-    assert mgr.redis.rpush.call_count == 0
+    assert mgr.redis.xadd.call_count == 0
 
 
 def test_record_health_with_fake_db(monkeypatch) -> None:
@@ -288,7 +288,7 @@ def test_source_id_carried_in_queue_message() -> None:
     mgr = make_manager()
     mgr.plugins["ok"] = OkPlugin()
     mgr.run_collection("ok", {"source_id": sid})
-    msg = json.loads(mgr.redis.rpush.call_args[0][1])
+    msg = json.loads(mgr.redis.xadd.call_args[0][1]["data"])
     assert msg["source_id"] == sid.lower()
 
 
@@ -298,4 +298,16 @@ def test_invalid_source_id_dropped_from_queue_message() -> None:
     mgr = make_manager()
     mgr.plugins["ok"] = OkPlugin()
     mgr.run_collection("ok", {"source_id": "x'; DROP TABLE items;--"})
-    assert json.loads(mgr.redis.rpush.call_args[0][1])["source_id"] is None
+    assert json.loads(mgr.redis.xadd.call_args[0][1]["data"])["source_id"] is None
+
+
+def test_enqueue_uses_stream_with_maxlen_cap(monkeypatch) -> None:
+    from osiris import queue as q
+
+    monkeypatch.setenv("OSIRIS_STREAM_MAXLEN", "5000")
+    mgr = make_manager(queue_name=q.STREAM)
+    mgr.plugins["ok"] = OkPlugin()
+    mgr.run_collection("ok", {})
+    args, kwargs = mgr.redis.xadd.call_args
+    assert args[0] == "osiris:stream:raw_items" and set(args[1]) == {"data"}
+    assert kwargs == {"maxlen": 5000, "approximate": True}

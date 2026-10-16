@@ -112,13 +112,31 @@ atlanan tipler fixture'dadır. Bilinen sapma: STIX'in SCO için önerdiği names
   (repr: `{'a': 1, 'b': None, 'c': True}`) yazar. Rust bunu ya birebir üretir ya da iki plugin JSON'a
   geçer — ikincisi bu plugin'lerin yeni öğelerinin `content_hash`'ini değiştirir (bilinçli karar gerekir).
 
-## 5. Kuyruk mesajı (`osiris:raw_items`)
+## 5. Kuyruk (Redis Streams, R3)
 
-`schemas/queue_message.schema.json`. Redis LIST (`RPUSH` / `LPOP`), UTF-8 JSON, en fazla 512 000 bayt:
+Kaynak: `osiris-sdk/osiris/queue.py` (sabitler tek yerde). Doğrulama: `tests/integration/test_queue_streams.py`.
+
+**Mesaj** — `schemas/queue_message.schema.json`, UTF-8 JSON, en fazla 512 000 bayt:
 `{"plugin_id", "source_id" (UUID küçük harf | null), "item": CollectedItem, "collected_at": epoch_sn}`.
-`source_id` R2'de eklendi; alanı olmayan eski mesajlar `null` sayılır. Pipeline yalnızca geçerli
-UUID'yi kabul eder; kaynak silinmişse öğe `source_id = NULL` ile yazılır. Bugünkü teslim garantisi
-**en fazla bir kez**; R3'te Streams + consumer group'a geçer (bu bölüm güncellenecek).
+`source_id` R2'de eklendi; alanı olmayan mesajlar `null` sayılır. Pipeline yalnızca geçerli UUID'yi kabul
+eder; kaynak silinmişse öğe `source_id = NULL` ile yazılır.
+
+**Taşıma:**
+
+| Öğe | Değer |
+|---|---|
+| Akış | `osiris:stream:raw_items`; girdi tek alanlı: `data` = mesaj JSON'u |
+| Üretici | `XADD … MAXLEN ~ OSIRIS_STREAM_MAXLEN (200 000) * data <json>` |
+| Tüketici grubu | `osiris-pipeline` (`XGROUP CREATE … 0 MKSTREAM`), tüketici adı `OSIRIS_PIPELINE_CONSUMER` veya `host-pid` |
+| Tur sırası | (1) eski LIST `osiris:raw_items` → `LPOP` ile boşalt; (2) `XAUTOCLAIM` min-idle 300 sn; (3) `XREADGROUP >` |
+| Başarı | `XACK` + `XDEL` (akış yalnızca işlenmemiş/bekleyen girdileri tutar) |
+| Bozuk mesaj | ölü-mektup akışı `osiris:stream:raw_items:dead` (`reason=invalid: …`), sonra `XACK` + `XDEL` |
+| Depolama hatası | girdi bekleyen listesinde kalır, süre dolunca yeniden alınır; teslim sayısı > 5 → ölü-mektup (`reason=max_deliveries`) |
+| Eski LIST'te depolama hatası | mesaj akışa aktarılır (kaybolmaz) |
+
+Teslim garantisi: **en az bir kez**. Aynı mesajın iki kez işlenmesi zararsızdır: `content_hash` UNIQUE
+(`ON CONFLICT DO NOTHING`) ve varlık bağları upsert'tir. Ölü-mektup girdisi orijinal alanlar +
+`source_id` (asıl girdi kimliği) + `reason` taşır.
 
 ## 6. Veri saklama ve silme (KVKK)
 

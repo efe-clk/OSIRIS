@@ -28,3 +28,24 @@ def db_url() -> str:
         conn.execute(f"TRUNCATE {', '.join(_TABLES)} RESTART IDENTITY CASCADE")
         conn.commit()
     return DB_URL
+
+
+REDIS_URL = os.getenv("OSIRIS_TEST_REDIS_URL", "")
+
+
+@pytest.fixture
+def redis_keys():
+    """Test başına benzersiz akış/liste anahtarları; yalnızca bunlar silinir (FLUSHDB yok)."""
+    if not REDIS_URL:
+        pytest.skip("OSIRIS_TEST_REDIS_URL tanımlı değil")
+    import uuid
+
+    import redis
+
+    client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+    tag = uuid.uuid4().hex[:8]
+    keys = {"stream": f"test:{tag}:stream", "legacy": f"test:{tag}:list",
+            "dead": "osiris:stream:raw_items:dead"}
+    dead_before = client.xlen(keys["dead"]) if client.exists(keys["dead"]) else 0
+    yield client, keys, dead_before
+    client.delete(keys["stream"], keys["legacy"])

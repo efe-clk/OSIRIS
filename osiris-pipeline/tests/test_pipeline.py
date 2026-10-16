@@ -55,8 +55,15 @@ def test_run_handles_bad_and_store_errors() -> None:
         '{"plugin_id":"t","item":{"raw_content":"merhaba"}}',
         None,
     ]
+    p.stream_name, p.group, p.consumer = "s", "g", "c"
+    p._group_ready, p.claim_idle_ms = True, 1000
+    p.redis.xautoclaim.return_value = ["0-0", [], []]
+    p.redis.xreadgroup.return_value = []
     p.store = MagicMock(side_effect=[RuntimeError("db"), None])  # type: ignore[method-assign]
     assert p.run(batch_size=10) == 1
+    # Eski kuyruktaki kayıt depolanamazsa kaybolmaz: yeniden denenmek üzere akışa taşınır
+    assert p.redis.xadd.call_args[0][0] == "s"
+    assert "selam" in p.redis.xadd.call_args[0][1]["data"]
     p.redis.lpop.side_effect = Exception("redis down")
     p.redis.lpop.side_effect = __import__("redis").RedisError("down")
     assert p.run() == 0

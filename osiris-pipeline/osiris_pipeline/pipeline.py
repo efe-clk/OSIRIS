@@ -18,11 +18,13 @@ import json
 import logging
 import os
 import re
+import socket
 from typing import Any
 
 import redis
 from bs4 import BeautifulSoup
 from langdetect import detect
+from osiris import queue as osiris_queue
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +58,21 @@ class ProcessingPipeline:
     def __init__(
         self,
         redis_url: str = "redis://localhost:6379/0",
-        queue_name: str = "osiris:raw_items",
+        queue_name: str = osiris_queue.LEGACY_LIST,
         database_url: str | None = None,
         embedding_model: str | None = None,
+        stream_name: str = osiris_queue.STREAM,
+        consumer: str | None = None,
     ) -> None:
         self.redis = redis.Redis.from_url(redis_url, decode_responses=True)
+        # queue_name: geçiş dönemi için eski LIST (önce boşaltılır); asıl kuyruk Stream
         self.queue_name = queue_name
+        self.stream_name = stream_name
+        self.group = osiris_queue.GROUP
+        self.consumer = consumer or os.getenv("OSIRIS_PIPELINE_CONSUMER") or \
+            f"{socket.gethostname()}-{os.getpid()}"
+        self.claim_idle_ms = osiris_queue.DEFAULT_CLAIM_IDLE_MS
+        self._group_ready = False
         self.database_url = database_url
         self.embedding_model_name = embedding_model or os.getenv("OSIRIS_EMBEDDING_MODEL")
         self._nlp = None
@@ -247,29 +258,110 @@ class ProcessingPipeline:
         return floats
 
     def run(self, batch_size: int = 10) -> int:
-        """Kuyruktan batch halinde kayıt işler. İşlenen kayıt sayısını döndürür."""
+        """Kuyruktan batch halinde kayıt işler. Depolanan kayıt sayısını döndürür.
+
+        Sıra: (1) eski LIST'i boşalt (geçiş), (2) zaman aşımına uğramış bekleyen
+        girdileri geri al (XAUTOCLAIM), (3) yeni girdileri oku (XREADGROUP).
+        """
         batch_size = max(1, min(int(batch_size), 100))
-        processed = 0
-        for _ in range(batch_size):
+        stored, consumed = self._drain_legacy(batch_size)
+        remaining = batch_size - consumed
+        if remaining <= 0:
+            return stored
+        try:
+            if not self._group_ready:
+                osiris_queue.ensure_group(self.redis, self.stream_name, self.group)
+                self._group_ready = True
+            claimed = self.redis.xautoclaim(
+                self.stream_name, self.group, self.consumer,
+                min_idle_time=self.claim_idle_ms, start_id="0-0", count=remaining,
+            )
+            reclaimed = list(claimed[1]) if claimed and len(claimed) > 1 else []
+            for entry_id, fields in reclaimed:
+                if fields is None:  # akıştan silinmiş ama bekleyen kalmış
+                    self.redis.xack(self.stream_name, self.group, entry_id)
+                    continue
+                if self._deliveries(entry_id) > osiris_queue.MAX_DELIVERIES:
+                    self._dead_letter(entry_id, fields, "max_deliveries")
+                    continue
+                stored += self._handle_entry(entry_id, fields)
+            remaining -= len(reclaimed)
+            if remaining > 0:
+                resp = self.redis.xreadgroup(self.group, self.consumer,
+                                             {self.stream_name: ">"}, count=remaining)
+                for _stream, entries in resp or []:
+                    for entry_id, fields in entries:
+                        stored += self._handle_entry(entry_id, fields)
+        except redis.RedisError as exc:
+            logger.error("Akış okunamadı: %s", exc)
+        return stored
+
+    def _drain_legacy(self, limit: int) -> tuple[int, int]:
+        """Eski LIST kuyruğunu boşaltır (geçiş uyumluluğu). (depolanan, tüketilen)."""
+        stored = consumed = 0
+        if not self.queue_name:
+            return 0, 0
+        for _ in range(limit):
             try:
                 raw = self.redis.lpop(self.queue_name)
             except redis.RedisError as exc:
-                logger.error("Kuyruk okunamadı: %s", exc)
+                logger.error("Eski kuyruk okunamadı: %s", exc)
                 break
             if raw is None:
                 break
+            consumed += 1
             try:
-                result = self.process_one(raw)
+                self.store(self.process_one(raw))
+                stored += 1
             except ValueError as exc:
                 logger.warning("Bozuk kayıt atlandı: %s", exc)
-                continue
-            try:
-                self.store(result)
             except Exception as exc:  # noqa: BLE001
-                logger.error("Depolama hatası: %s", exc)
-                continue
-            processed += 1
-        return processed
+                logger.error("Depolama hatası (eski kuyruk; kayıt akışa taşındı): %s", exc)
+                try:  # kaybolmasın: yeniden denenmek üzere akışa aktar
+                    osiris_queue.enqueue(self.redis, raw, self.stream_name)
+                except redis.RedisError:
+                    logger.error("Kayıt akışa taşınamadı, kayboldu")
+        return stored, consumed
+
+    def _handle_entry(self, entry_id: str, fields: dict) -> int:
+        """Tek akış girdisini işler. Başarı → 1 (ack+del); kalıcı hata → 0 (ack+del);
+        geçici (depolama) hatası → 0, girdi bekleyen listesinde kalır."""
+        raw = (fields or {}).get(osiris_queue.FIELD)
+        try:
+            result = self.process_one(raw if isinstance(raw, str) else "")
+        except ValueError as exc:
+            logger.warning("Bozuk kayıt atlandı (%s): %s", entry_id, exc)
+            self._dead_letter(entry_id, fields or {}, f"invalid: {exc}"[:200])
+            return 0
+        try:
+            self.store(result)
+        except Exception as exc:  # noqa: BLE001 — yeniden denenecek (XAUTOCLAIM)
+            logger.error("Depolama hatası (%s, yeniden denenecek): %s", entry_id, exc)
+            return 0
+        self._ack(entry_id)
+        return 1
+
+    def _ack(self, entry_id: str) -> None:
+        self.redis.xack(self.stream_name, self.group, entry_id)
+        self.redis.xdel(self.stream_name, entry_id)
+
+    def _deliveries(self, entry_id: str) -> int:
+        try:
+            info = self.redis.xpending_range(self.stream_name, self.group,
+                                             min=entry_id, max=entry_id, count=1)
+            return int(info[0]["times_delivered"]) if info else 0
+        except (redis.RedisError, KeyError, IndexError, TypeError, ValueError):
+            return 0
+
+    def _dead_letter(self, entry_id: str, fields: dict, reason: str) -> None:
+        """İşlenemeyen girdiyi ölü-mektup akışına taşır ve asıl akıştan siler."""
+        try:
+            self.redis.xadd(osiris_queue.DEAD_LETTER,
+                            {**{str(k): str(v) for k, v in fields.items()},
+                             "source_id": str(entry_id), "reason": reason},
+                            maxlen=10_000, approximate=True)
+        finally:
+            self._ack(entry_id)
 
     def store(self, result: dict[str, Any]) -> str | None:
         """İşlenmiş veriyi PostgreSQL'e yazar (upsert + dedup). Item id döner."""

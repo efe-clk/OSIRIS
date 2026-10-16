@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://osiris.local/schemas/queue_message.schema.json",
-  "title": "osiris:raw_items kuyruk mesajı",
+  "title": "osiris:stream:raw_items kuyruk mesajı (girdinin data alanı)",
   "description": "Collector → pipeline. Redis'te UTF-8 JSON dizgesi; en fazla 512000 bayt. source_id R2'de eklendi (yoksa null sayılır).",
   "type": "object",
   "required": ["plugin_id", "item", "collected_at"],

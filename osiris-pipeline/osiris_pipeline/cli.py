@@ -23,6 +23,7 @@ def build_pipeline(args: argparse.Namespace) -> ProcessingPipeline:
     return ProcessingPipeline(
         redis_url=args.redis_url,
         queue_name=args.queue,
+        stream_name=args.stream,
         database_url=args.database_url,
         embedding_model=args.embedding_model,
     )
@@ -41,7 +42,10 @@ def main(argv: list[str] | None = None) -> int:
         prog="osiris-pipeline", description="OSIRIS Processing Pipeline işçisi")
     parser.add_argument("--redis-url",
                         default=os.getenv("OSIRIS_REDIS_URL", "redis://localhost:6379/0"))
-    parser.add_argument("--queue", default="osiris:raw_items")
+    parser.add_argument("--queue", default="osiris:raw_items",
+                        help="Eski LIST kuyruğu (geçiş: önce boşaltılır)")
+    parser.add_argument("--stream", default="osiris:stream:raw_items",
+                        help="Redis Stream (asıl kuyruk; grup osiris-pipeline)")
     parser.add_argument("--database-url", default=os.getenv("OSIRIS_DATABASE_URL"))
     parser.add_argument("--embedding-model", default=os.getenv("OSIRIS_EMBEDDING_MODEL"))
     parser.add_argument("--batch", type=int, default=50)

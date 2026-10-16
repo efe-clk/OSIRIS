@@ -13,11 +13,12 @@ from typing import Any
 import redis
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from osiris import queue as osiris_queue
 from osiris.plugin import BaseCollector, CollectionResult
 
 logger = logging.getLogger(__name__)
 
-_MAX_QUEUE_ITEM_BYTES = 512_000
+_MAX_QUEUE_ITEM_BYTES = osiris_queue.MAX_MESSAGE_BYTES
 _CRON_PART_RE = re.compile(r"^[\d,/*-]+$")
 _PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -30,7 +31,7 @@ class CollectorManager:
         self,
         plugins_dir: str | Path = "plugins",
         redis_url: str = "redis://localhost:6379/0",
-        queue_name: str = "osiris:raw_items",
+        queue_name: str = osiris_queue.STREAM,
         database_url: str | None = None,
     ) -> None:
         self.plugins_dir = Path(plugins_dir)
@@ -159,7 +160,7 @@ class CollectorManager:
                     logger.warning("%s: öğe çok büyük, atlandı", plugin_id)
                     continue
                 try:
-                    self.redis.rpush(self.queue_name, payload)
+                    osiris_queue.enqueue(self.redis, payload, self.queue_name)
                     enqueued += 1
                 except redis.RedisError as exc:
                     logger.error("%s: kuyruğa yazılamadı: %s", plugin_id, exc)

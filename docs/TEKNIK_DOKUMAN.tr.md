@@ -157,7 +157,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 |-----------|----------|
 | **PostgreSQL 16** | Ana ilişkisel depo |
 | **pgvector** | Embedding'ler — semantik arama |
-| **Redis** | Önbellek + `osiris:raw_items` kuyruğu + `osiris:alerts` pub/sub |
+| **Redis** | Önbellek + `osiris:stream:raw_items` kuyruğu (Streams, en az bir kez) + `osiris:alerts` pub/sub |
 | **TimescaleDB** | Opsiyonel; varsa `source_metrics` hypertable (yoksa zarif yedek) |
 
 ### 4.3 Arayüz Teknolojileri
