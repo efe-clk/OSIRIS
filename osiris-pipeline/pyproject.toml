@@ -13,13 +13,14 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "beautifulsoup4>=4.12",
     "langdetect>=1.0",
-    "spacy>=3.7",
 ]
 
 [project.optional-dependencies]
 # Semantik embedding — fastembed (ONNX, torch YOK; model ~220 MB ilk kullanımda iner).
 # pip install "osiris-pipeline[embedding]"  ·  model: OSIRIS_EMBEDDING_MODEL
 embedding = ["fastembed>=0.8.1,<0.10"]
+# ONNX NER (kişi/kurum/yer) — model: python models/download.py --only ner
+ner = ["onnxruntime>=1.20,<2", "tokenizers>=0.20,<1", "numpy>=1.26"]
 
 [project.scripts]
 osiris-pipeline = "osiris_pipeline.cli:main"

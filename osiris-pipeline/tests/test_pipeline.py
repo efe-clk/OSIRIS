@@ -69,16 +69,30 @@ def test_run_handles_bad_and_store_errors() -> None:
     assert p.run() == 0
 
 
-def test_nlp_fallback_without_spacy(monkeypatch) -> None:
+def test_nlp_fallback_without_model_or_runtime(monkeypatch, tmp_path) -> None:
     import sys
 
     from osiris_pipeline.pipeline import ProcessingPipeline
 
-    monkeypatch.setitem(sys.modules, "spacy", None)
+    # Model dizini boş → yalnızca regex
+    monkeypatch.setenv("OSIRIS_MODEL_DIR", str(tmp_path))
     p = ProcessingPipeline.__new__(ProcessingPipeline)
     p._nlp = None
     assert p.nlp is None
     assert any(e["type"] == "email" for e in p.extract_entities("a@b.co"))
+    # Açıkça kapatılmış
+    monkeypatch.setenv("OSIRIS_NER", "off")
+    p._nlp = None
+    assert p.nlp is None
+    # Model var ama onnxruntime yok → kapalı, çökmez
+    monkeypatch.delenv("OSIRIS_NER")
+    d = tmp_path / "ner/bert-base-multilingual-cased-ner-hrl"
+    (d / "onnx").mkdir(parents=True)
+    for f in ("onnx/model_int8.onnx", "tokenizer.json", "config.json"):
+        (d / f).write_text("x")
+    monkeypatch.setitem(sys.modules, "onnxruntime", None)
+    p._nlp = None
+    assert p.nlp is None
 
 
 def test_store_rejects_malformed_result() -> None:

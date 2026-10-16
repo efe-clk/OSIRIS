@@ -43,7 +43,7 @@ This document summarizes the high-level architecture of the OSIRIS platform and 
 |--------|---------------|-------|
 | `osiris-core` | Central coordinator, plugin lifecycle, scheduling | Atomic stop flag; REST runs in `osiris-api` |
 | `osiris-collector` | Plugin loading, task execution, queue delivery | Crash isolation, full cron, source health tracking |
-| `osiris-pipeline` | Cleaning, NER, classification, embedding, storage | Regex + spaCy NER, keyword topics, optional sentence-transformers |
+| `osiris-pipeline` | Cleaning, NER, classification, embedding, storage | Regex + ONNX NER (mBERT-hrl), keyword topics, fastembed embeddings (384-d); Redis Streams consumer |
 | `osiris-query` | Full-text + semantic + entity search | `dict_row`, validated limits, LIKE-escape |
 | `osiris-graph` | Entity graph, centrality, communities | In-memory + `graph_edges` persistence |
 | `osiris-alert` | Saved-query matching, anomaly detection | Substring match, mute rules, z-score baselines |

@@ -64,6 +64,7 @@ def fetch(name: str, root: Path) -> Path:
     for rel, (kind, want) in spec["files"].items():
         dest = target / rel
         if dest.is_file() and _digest(dest, kind) == want:
+            dest.chmod(0o644)
             print(f"  ✓ {name}/{rel} (önbellekte)")
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -78,6 +79,7 @@ def fetch(name: str, root: Path) -> Path:
         if got != want:
             tmp_path.unlink(missing_ok=True)
             raise SystemExit(f"DOĞRULAMA HATASI {name}/{rel}: {kind} {got} != {want}")
+        tmp_path.chmod(0o644)  # tempfile 0600 oluşturur; konteyner kullanıcısı okuyabilmeli
         tmp_path.replace(dest)
     print(f"{name}: {target}  [{spec['repo']}@{spec['revision'][:10]}, {spec['license']}]")
     return target

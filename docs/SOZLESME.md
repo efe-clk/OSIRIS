@@ -162,7 +162,7 @@ ayrıntı içermez; kodlar 400/401/403/404/409/413/422/500/502/503.
 ## 8. Varlık çıkarma (regex)
 
 Kaynak: `ProcessingPipeline.extract_entities`. Fixture: `fixtures/extract/cases.json` (NER kapalı; NER
-R3'te ayrı fixture'larla sabitlenir). Python `re` Unicode modunda: `\d` ve `\b` Unicode'dur.
+§11'de ayrı fixture'larla sabitlenmiştir). Python `re` Unicode modunda: `\d` ve `\b` Unicode'dur.
 
 | Sıra | Tip | Desen | Ek kural |
 |---|---|---|---|
@@ -187,3 +187,36 @@ Fixture: `fixtures/graph/cases.json`. Graf **yönsüz, çift başına tek kenar*
 - Topluluk: Clauset–Newman–Moore açgözlü modülerlik (networkx `greedy_modularity_communities`,
   ağırlıksız). **Topluluk ve üye sırası sözleşme dışıdır** (fixture sıralı listeler karşılaştırır).
   Kenarsız graf → her düğüm kendi topluluğu.
+
+## 10. Embedding (R3 / K5)
+
+Kaynak: `ProcessingPipeline.generate_embedding`. Fixture: `fixtures/embedding/cases.json`.
+Migration 005 (`items.embedding_v2 VECTOR(384)`, `items.embedding_model`).
+
+- Model `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`; ONNX dosyası
+  `Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q@faf4aa42…` `model_optimized.onnx`
+  (`models/download.py`, sha256 doğrulamalı). Rust: aynı dosya (fastembed-rs `ParaphraseMLMiniLML12V2Q`).
+- Girdi: `cleaned_content`'in ilk 8000 kod noktası; tokenizer'ın kendi kesmesi (fastembed varsayılanı)
+  uygulanır. Çıktı **L2-normalize** edilir; sıfır vektör → vektör yok.
+- Karşılaştırma bayt bayt **değildir**: her fixture vektörüyle kosinüs ≥ 0.999 (ONNX çalışma zamanı/CPU farkı).
+- `embedding_model` sütunu vektörü üreten modeli kaydeder; farklı modellerin vektörleri karıştırılmaz.
+  Vektörlenemeyen (boş) öğe `"<model>#skip"` ile işaretlenir.
+- Semantik arama: 384 boyutlu sorgu → `embedding_v2 <=> sorgu` (kosinüs), `similarity = 1 − mesafe`.
+
+## 11. NER (R3 / K4)
+
+Kaynak: `osiris-pipeline/osiris_pipeline/ner.py` (kurallar modül belgesinde, birebir).
+Fixture: `fixtures/ner/cases.json` (model gerekir) + `osiris-pipeline/tests/test_ner_rules.py`
+(birleştirme kuralları, model gerekmez).
+
+- Model `onnx-community/bert-base-multilingual-cased-ner-hrl-ONNX@cfe67b1c…` `onnx/model_int8.onnx`
+  (Davlan mBERT-hrl, AFL-3.0 — repoda dağıtılmaz). CPU, `intra_op_num_threads = 1`.
+- Özet: ilk 10 000 kod noktası → özel tokensız tokenize → 510 token'lık pencereler (`[CLS]…[SEP]`)
+  → argmax → kelime etiketi = ilk alt-token → BIO birleştirme → uçlardan boşluk + Unicode `P*`
+  noktalama atılır → < 2 kod noktası atılır. PER→person, ORG→org, LOC→location, DATE atılır.
+- **Ofsetler Unicode kod noktasıdır** (Python tokenizers). Rust tokenizers bayt ofseti döndürür —
+  dilimlemeden önce kod noktasına çevrilmelidir (`fixtures/ner` `emoji_ofset` durumu bunu sınar).
+- Varlıklar regex varlıklarından **sonra** eklenir ve aynı `(tip, değer.lower())` tekilleştirmesine
+  girer (§8). Model veya çalışma zamanı yoksa yalnızca regex çalışır (`OSIRIS_NER=off` ile de).
+- Karşılaştırma: aynı model + aynı CPU sınıfında birebir eşitlik beklenir; int8 çekirdeklerinde
+  CPU'ya bağlı nadir argmax farkları görülürse fixture'a tolerans eklenmesi sözleşme değişikliğidir.

@@ -102,3 +102,30 @@ def test_embedding_fixture_semantics() -> None:
     for pair in _EMB["pairs"]:
         c = _cos(vec[pair["a"]], vec[pair["b"]])
         assert c >= pair.get("min_cosine", -1) and c <= pair.get("max_cosine", 1)
+
+
+_NER = harness.load(harness.FIXTURES / "ner" / "cases.json")
+
+
+@pytest.mark.skipif(not harness.ner_available(), reason="NER modeli yok (python models/download.py --only ner)")
+@pytest.mark.parametrize("case", [pytest.param(c, id=c["name"]) for c in _NER["cases"]])
+def test_ner(case) -> None:
+    assert harness.run_ner(case) == case["expected"]
+
+
+def test_ner_fixture_values_are_substrings() -> None:
+    """Beklenen varlıklar girdinin birebir alt dizeleri (ofset hizası; model gerekmez)."""
+    for case in _NER["cases"]:
+        for ent in case["expected"]["entities"]:
+            assert ent["value"] in case["input"], (case["name"], ent)
+            assert ent["type"] in {"person", "org", "location"}
+
+
+def test_models_present_when_required() -> None:
+    """CI'da (OSIRIS_REQUIRE_MODELS=1) model testleri sessizce atlanmamalı."""
+    import os
+
+    if os.getenv("OSIRIS_REQUIRE_MODELS") != "1":
+        pytest.skip("OSIRIS_REQUIRE_MODELS=1 değil")
+    assert harness.ner_available(), "NER modeli yok"
+    assert harness.embedding_available(), "embedding modeli yok"

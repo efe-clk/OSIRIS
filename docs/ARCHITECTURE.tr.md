@@ -43,7 +43,7 @@ Bu doküman, OSIRIS platformunun yüksek seviyeli mimarisini ve modül sorumlulu
 |-------|-----------|--------|
 | `osiris-core` | Merkezi koordinatör, plugin yaşam döngüsü, zamanlama | Atomik durdurma bayrağı; REST `osiris-api`'de |
 | `osiris-collector` | Plugin yükleme, görev çalıştırma, kuyruğa iletme | Crash izolasyonu, tam cron, kaynak sağlık takibi |
-| `osiris-pipeline` | Temizleme, NER, sınıflandırma, embedding, depolama | Regex + spaCy NER, anahtar kelime konuları, opsiyonel sentence-transformers |
+| `osiris-pipeline` | Temizleme, NER, sınıflandırma, embedding, depolama | Regex + ONNX NER (mBERT-hrl), anahtar kelime konuları, fastembed embedding (384 boyut); Redis Streams tüketicisi |
 | `osiris-query` | Tam metin + semantik + varlık araması | `dict_row`, doğrulanmış limitler, LIKE kaçışı |
 | `osiris-graph` | Varlık grafı, merkezilik, kümeleme | Bellek-içi + `graph_edges` kalıcılığı |
 | `osiris-alert` | Kayıtlı sorgu eşleşme, anomali tespiti | Alt metin eşleşme, sessize alma, z-skor tabanları |

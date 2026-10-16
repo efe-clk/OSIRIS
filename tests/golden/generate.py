@@ -33,6 +33,14 @@ def build() -> dict[Path, object]:
         out[path] = data
     else:
         print("UYARI: embedding modeli yok (python models/download.py) — embedding fixture'ları atlandı")
+    if harness.ner_available():
+        path = harness.FIXTURES / "ner" / "cases.json"
+        data = harness.load(path)
+        for case in data["cases"]:
+            case["expected"] = harness.run_ner({k: v for k, v in case.items() if k != "expected"})
+        out[path] = data
+    else:
+        print("UYARI: NER modeli yok (python models/download.py --only ner) — NER fixture'ları atlandı")
     for path in sorted((harness.FIXTURES / "plugins").glob("*.json")):
         case = harness.load(path)
         inp = {k: v for k, v in case.items() if k not in ("expected", "expected_network")}

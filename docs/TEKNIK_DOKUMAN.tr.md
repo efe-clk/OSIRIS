@@ -61,8 +61,8 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 ### 2.3 Veri İşleme & Analiz
 - HTML soyma, boşluk normalizasyonu, kodlama onarımı
 - Dil tespiti, anahtar kelime konu sınıflandırma
-- Varlık çıkarma: e-posta, IP (doğrulamalı), domain, telefon, kripto adresi, CVE + spaCy NER yedeği
-- Opsiyonel semantik embedding (`OSIRIS_EMBEDDING_MODEL`, boyut uyumsuzluğunda pgvector yedeği)
+- Varlık çıkarma: e-posta, IP (doğrulamalı), domain, telefon, kripto adresi, CVE (regex) + kişi/kurum/yer için ONNX NER (mBERT-hrl int8; model yoksa yalnızca regex)
+- fastembed ile semantik embedding (`paraphrase-multilingual-MiniLM-L12-v2`, 384 boyut → `items.embedding_v2`; `--reembed` ile geriye dönük doldurma)
 - İçerik-hash tekilleştirme
 
 ### 2.4 Arama & Sorgulama
@@ -173,7 +173,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 `requests` (HTTP, açık `verify=True`), `feedparser`, `dnspython`, SOCKS5 (Tor), düz HTTP proxy (I2P), ham soketler (zaman aşımlı IRC/WHOIS).
 
 ### 4.5 Veri İşleme & ML
-`beautifulsoup4`, `langdetect`, `spaCy` (opsiyonel, zarif yedek), `sentence-transformers` (opsiyonel `osiris-pipeline[embedding]`), `networkx`, `pandas`.
+`beautifulsoup4`, `langdetect`, `onnxruntime` + `tokenizers` (`osiris-pipeline[ner]`), `fastembed` (`osiris-pipeline[embedding]`), `networkx`. Modeller: `python models/download.py` (sabit revizyon + özet doğrulaması, git'e girmez).
 
 ### 4.6 Otomasyon & Entegrasyon
 N8N (self-host, API anahtar başlıklı), APScheduler (cron), Redis pub/sub (uyarılar).
@@ -295,7 +295,7 @@ sources (
 [Processing Pipeline]
     ├─ Temizleme & Normalizasyon
     ├─ Dil Tespiti
-    ├─ Varlık Çıkarma (regex + spaCy)
+    ├─ Varlık Çıkarma (regex + ONNX NER)
     ├─ Sınıflandırma (konular)
     ├─ Embedding (opsiyonel model)
     └─ Tekilleştirme (content_hash)
@@ -366,6 +366,7 @@ servisler:
   n8n:               # otomasyon (host 5678)
   osiris-api:        # REST API (127.0.0.1:8001 → 8000, profil: api/full)
   osiris-web-ui:     # arayüz (127.0.0.1:3001 → 3000, profil: ui/full)
+  osiris-pipeline:   # kuyruk işçisi + saklama temizliği (profil: worker)
   tor:               # Tor SOCKS5 istemcisi (iç ağ :9050, profil: darknet)
   i2pd:              # I2P HTTP proxy (iç ağ :4444, profil: darknet)
   nginx:             # ters proxy + TLS (:80, :8443)
@@ -515,6 +516,11 @@ Uyarı işleyiciler (e-posta/Telegram/webhook) `AlertManager.register_handler`'a
 | `OSIRIS_RETENTION_DAYS` | KVKK varsayılan saklama süresi, gün (180; 0 = kapalı) |
 | `OSIRIS_RETENTION_INTERVAL` | Pipeline döngüsünde temizlik aralığı, sn (3600; 0 = kapalı) |
 | `OSIRIS_USERNAME_DB_DIR` | username-search `sites_db` için ek izinli dizin |
+| `OSIRIS_MODEL_DIR` | ONNX model kökü (varsayılan `./models`; işçi imajında `/app/models`) |
+| `OSIRIS_EMBEDDING_MODEL` | Embedding modeli; tanımsız = vektör yok (işçi varsayılanı: MiniLM-L12-v2) |
+| `OSIRIS_NER` | `off` → ONNX NER kapalı (yalnızca regex) |
+| `OSIRIS_STREAM_MAXLEN` | Kuyruk akışı için yaklaşık üst sınır (200000) |
+| `OSIRIS_PIPELINE_CONSUMER` | `osiris-pipeline` grubundaki tüketici adı (varsayılan `host-pid`) |
 | `OSIRIS_TOR_SOCKS` | tor plugin'inin SOCKS5 proxy'si, `host:port` (compose: `tor:9050`) |
 | `OSIRIS_I2P_HTTP_PROXY` | i2p plugin'inin HTTP proxy'si, `host:port` (compose: `i2pd:4444`) |
 

@@ -93,18 +93,27 @@ class ProcessingPipeline:
 
     @property
     def nlp(self):
-        """spaCy modelini tembel yükleme (yoksa None, regex'e düşer)."""
-        if self._nlp is None:
-            try:
-                import spacy
+        """ONNX NER modelini tembel yükleme (R3/K4). Model/çalışma zamanı yoksa None → yalnızca regex.
 
-                try:
-                    self._nlp = spacy.load("xx_ent_wiki_sm")
-                except OSError:
-                    # Model kurulu değilse boş pipeline (regex NER yeterli)
-                    self._nlp = spacy.blank("xx")
+        ``OSIRIS_NER=off`` NER'i kapatır. Model: ``models/download.py --only ner``.
+        """
+        if self._nlp is None:
+            self._nlp = False
+            if os.getenv("OSIRIS_NER", "").lower() in ("off", "0", "false"):
+                return None
+            from osiris_pipeline.ner import OnnxNer
+
+            if not OnnxNer.available(model_dir()):
+                logger.info("NER modeli yok (%s); yalnızca regex çıkarıcı",
+                            model_dir() / "ner")
+                return None
+            try:
+                self._nlp = OnnxNer(model_dir() / "ner/bert-base-multilingual-cased-ner-hrl")
             except ImportError:
-                self._nlp = False
+                logger.warning("onnxruntime/tokenizers kurulu değil; NER kapalı "
+                               "(pip install 'osiris-pipeline[ner]')")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("NER modeli yüklenemedi: %s", exc)
         return self._nlp or None
 
     def process_one(self, raw: str) -> dict[str, Any]:
@@ -167,7 +176,7 @@ class ProcessingPipeline:
             return "unknown"
 
     def extract_entities(self, text: str) -> list[dict[str, Any]]:
-        """Varlık çıkarma: email, IP, domain, telefon, kripto, CVE + spaCy NER."""
+        """Varlık çıkarma: email, IP, domain, telefon, kripto, CVE (regex) + ONNX NER."""
         entities: list[dict[str, Any]] = []
         seen: set[tuple[str, str]] = set()
 
@@ -215,13 +224,10 @@ class ProcessingPipeline:
         nlp = self.nlp
         if nlp is not None:
             try:
-                doc = nlp(text[:10000])
-                for ent in doc.ents:
-                    label = ent.label_.lower()
-                    etype = label if label in _VALID_ENTITY_TYPES else "custom"
-                    _add(etype, ent.text)
-            except Exception:  # noqa: BLE001
-                logger.debug("NER başarısız, regex sonuçları kullanılıyor")
+                for ent in nlp.extract(text):  # person / org / location (regex'ten SONRA)
+                    _add(ent["type"], ent["value"])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("NER başarısız, regex sonuçları kullanılıyor: %s", exc)
 
         return entities
 

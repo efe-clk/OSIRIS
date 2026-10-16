@@ -1,0 +1,156 @@
+{
+  "model": "onnx-community/bert-base-multilingual-cased-ner-hrl-ONNX@cfe67b1c1c4c91c1b26ac192955fc0971e62d8c8 onnx/model_int8.onnx",
+  "note": "OnnxNer.extract çıktısı (birleştirme kuralları: osiris_pipeline/ner.py, SOZLESME §11). Ofsetler Unicode kod noktasıdır.",
+  "cases": [
+    {
+      "name": "tr_siyaset",
+      "input": "Recep Tayyip Erdoğan Ankara'da NATO yetkilileriyle görüştü.",
+      "expected": {
+        "entities": [
+          {
+            "type": "person",
+            "value": "Recep Tayyip Erdoğan"
+          },
+          {
+            "type": "location",
+            "value": "Ankara"
+          },
+          {
+            "type": "org",
+            "value": "NATO"
+          }
+        ]
+      }
+    },
+    {
+      "name": "en_avrupa",
+      "input": "Angela Merkel met Emmanuel Macron in Paris to discuss the European Union budget.",
+      "expected": {
+        "entities": [
+          {
+            "type": "person",
+            "value": "Angela Merkel"
+          },
+          {
+            "type": "person",
+            "value": "Emmanuel Macron"
+          },
+          {
+            "type": "location",
+            "value": "Paris"
+          },
+          {
+            "type": "org",
+            "value": "European Union"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tr_siber",
+      "input": "LockBit grubu İstanbul'daki bir hastaneye saldırdı; Microsoft ve Siemens etkilendi.",
+      "expected": {
+        "entities": [
+          {
+            "type": "org",
+            "value": "LockBit"
+          },
+          {
+            "type": "location",
+            "value": "İstanbul"
+          },
+          {
+            "type": "org",
+            "value": "Microsoft"
+          },
+          {
+            "type": "org",
+            "value": "Siemens"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tr_kisi",
+      "input": "Satıcı 'darkdealer' Telegram üzerinden Ahmet Yılmaz'ın kimlik bilgilerini sattı.",
+      "expected": {
+        "entities": [
+          {
+            "type": "org",
+            "value": "darkdealer"
+          },
+          {
+            "type": "person",
+            "value": "Ahmet Yılmaz"
+          }
+        ]
+      }
+    },
+    {
+      "name": "de_kurum",
+      "input": "Die Deutsche Telekom bestätigte den Angriff in Bonn.",
+      "expected": {
+        "entities": [
+          {
+            "type": "org",
+            "value": "Deutsche Telekom"
+          },
+          {
+            "type": "location",
+            "value": "Bonn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "emoji_ofset",
+      "input": "🔥🔥 Breaking: 👨‍👩‍👧 Elon Musk Tesla'yı Berlin'de ziyaret etti 🚗",
+      "expected": {
+        "entities": [
+          {
+            "type": "person",
+            "value": "Elon Musk"
+          },
+          {
+            "type": "person",
+            "value": "Tesla"
+          },
+          {
+            "type": "location",
+            "value": "Berlin"
+          }
+        ]
+      }
+    },
+    {
+      "name": "bos",
+      "input": "   ",
+      "expected": {
+        "entities": []
+      }
+    },
+    {
+      "name": "varliksiz",
+      "input": "bugün hava güzel ve sakin",
+      "expected": {
+        "entities": []
+      }
+    },
+    {
+      "name": "pencere_siniri_510_token",
+      "input": "Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Rapor devam ediyor ve ayrıntılar inceleniyor. Sonunda Kemal Kılıçdaroğlu İzmir'de konuştu.",
+      "expected": {
+        "entities": [
+          {
+            "type": "person",
+            "value": "Kemal Kılıçdaroğlu"
+          },
+          {
+            "type": "location",
+            "value": "İzmir"
+          }
+        ]
+      }
+    }
+  ]
+}

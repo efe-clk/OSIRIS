@@ -70,14 +70,27 @@ jobs:
               psql -h localhost -U osiris -d osiris_test -v ON_ERROR_STOP=1 -q -f "$f"
             done
           done
+      - name: ONNX modelleri (önbellekli; sabit revizyon + özet doğrulaması)
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: onnx-models-${{ hashFiles('models/download.py') }}
+      - name: Modelleri indir / doğrula
+        run: python models/download.py
       - name: Bağımlılıkları kur
         run: |
-          pip install -e ./osiris-sdk -e ./osiris-collector -e ./osiris-pipeline \
+          pip install -e ./osiris-sdk -e ./osiris-collector -e "./osiris-pipeline[embedding,ner]" \
             -e ./osiris-graph -e ./osiris-query -e ./osiris-alert -e ./osiris-report \
             -e ./osiris-api uvicorn -r tests/contract/requirements.txt
           for req in plugins/*/requirements.txt; do pip install -r "$req"; done
-      - name: Entegrasyon testleri
-        run: pytest -q tests/integration
+      - name: Entegrasyon + model golden testleri (NER, embedding)
+        env:
+          OSIRIS_MODEL_DIR: models
+          HF_HUB_OFFLINE: "1"
+          OSIRIS_REQUIRE_MODELS: "1"
+        run: |
+          pytest -q tests/integration
+          pytest -q tests/golden -k "ner or embedding or models_present" -rs
       - name: Sözleşme (kara kutu) testleri — gerçek API'ye karşı
         env:
           OSIRIS_API_KEY: ci-contract-admin-key-0123456789abcdef

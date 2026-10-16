@@ -61,8 +61,8 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 ### 2.3 Data Processing & Analysis
 - HTML stripping, whitespace normalization, encoding repair
 - Language detection, keyword topic classification
-- Entity extraction: email, IP (validated), domain, phone, crypto address, CVE + spaCy NER fallback
-- Optional semantic embeddings (`OSIRIS_EMBEDDING_MODEL`, pgvector with dimension-mismatch fallback)
+- Entity extraction: email, IP (validated), domain, phone, crypto address, CVE (regex) + ONNX NER for person/org/location (mBERT-hrl int8; regex-only if model absent)
+- Semantic embeddings via fastembed (`paraphrase-multilingual-MiniLM-L12-v2`, 384-d → `items.embedding_v2`; `--reembed` backfill)
 - Content-hash deduplication
 
 ### 2.4 Search & Query
@@ -175,7 +175,7 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 
 ### 4.5 Data Processing & ML
 
-`beautifulsoup4`, `langdetect`, `spaCy` (optional, graceful fallback), `sentence-transformers` (optional extra `osiris-pipeline[embedding]`), `networkx`, `pandas`.
+`beautifulsoup4`, `langdetect`, `onnxruntime` + `tokenizers` (extra `osiris-pipeline[ner]`), `fastembed` (extra `osiris-pipeline[embedding]`), `networkx`. Models: `python models/download.py` (pinned + hash-verified, not in git).
 
 ### 4.6 Automation & Integration
 
@@ -300,7 +300,7 @@ sources (
 [Processing Pipeline]
     ├─ Clean & Normalize
     ├─ Language Detect
-    ├─ Entity Extract (regex + spaCy)
+    ├─ Entity Extract (regex + ONNX NER)
     ├─ Classify (topics)
     ├─ Embed (optional model)
     └─ Deduplicate (content_hash)
@@ -371,6 +371,7 @@ services:
   n8n:               # automation (host 5678)
   osiris-api:        # REST API (127.0.0.1:8001 → 8000, profile: api/full)
   osiris-web-ui:     # frontend (127.0.0.1:3001 → 3000, profile: ui/full)
+  osiris-pipeline:   # queue worker + retention purge (profile: worker)
   tor:               # Tor SOCKS5 client (internal :9050, profile: darknet)
   i2pd:              # I2P HTTP proxy (internal :4444, profile: darknet)
   nginx:             # reverse proxy + TLS (:80, :8443)
@@ -520,6 +521,11 @@ Alert handlers (email/Telegram/webhook) plug into `AlertManager.register_handler
 | `OSIRIS_RETENTION_DAYS` | KVKK default retention, days (180; 0 = off) |
 | `OSIRIS_RETENTION_INTERVAL` | Purge interval in the pipeline loop, s (3600; 0 = off) |
 | `OSIRIS_USERNAME_DB_DIR` | Extra allowed directory for username-search `sites_db` |
+| `OSIRIS_MODEL_DIR` | ONNX model root (default `./models`; worker image `/app/models`) |
+| `OSIRIS_EMBEDDING_MODEL` | Embedding model; unset = no vectors (worker default: MiniLM-L12-v2) |
+| `OSIRIS_NER` | `off` disables ONNX NER (regex only) |
+| `OSIRIS_STREAM_MAXLEN` | Approx. cap for the queue stream (200000) |
+| `OSIRIS_PIPELINE_CONSUMER` | Consumer name in group `osiris-pipeline` (default `host-pid`) |
 | `OSIRIS_TOR_SOCKS` | SOCKS5 proxy for the tor plugin, `host:port` (compose: `tor:9050`) |
 | `OSIRIS_I2P_HTTP_PROXY` | HTTP proxy for the i2p plugin, `host:port` (compose: `i2pd:4444`) |
 

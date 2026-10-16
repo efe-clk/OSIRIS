@@ -141,6 +141,34 @@ services:
       - "127.0.0.1:8001:8000"
     profiles: ["api", "full"]
 
+  # Kuyruk işçisi (profil: worker) — osiris:stream:raw_items'i tüketir, DB'ye yazar,
+  # saklama süresi dolan öğeleri siler (OSIRIS_RETENTION_DAYS!). Açıkça başlatılır:
+  #   python models/download.py && docker compose --profile worker up -d --build
+  osiris-pipeline:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.pipeline
+    image: osiris-pipeline:0.1.0
+    container_name: osiris-pipeline
+    restart: unless-stopped
+    mem_limit: 2g
+    logging: *default-logging
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
+      OSIRIS_REDIS_URL: redis://redis:6379/0
+      OSIRIS_EMBEDDING_MODEL: ${OSIRIS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
+      OSIRIS_RETENTION_INTERVAL: ${OSIRIS_RETENTION_INTERVAL:-3600}
+      OSIRIS_PIPELINE_CONSUMER: osiris-pipeline-1
+    volumes:
+      - ./models:/app/models:ro
+    profiles: ["worker"]
+
   osiris-web-ui:
     build:
       context: ./osiris-web-ui

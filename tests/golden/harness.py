@@ -268,3 +268,22 @@ def run_embedding(case: dict, _cache: dict = {}) -> dict:  # noqa: B006 — mode
     text = case["input"] if "input" in case else case["input_repeat"]["text"] * case["input_repeat"]["times"]
     vec = _cache["p"].generate_embedding(text)
     return {"vector": [round(x, 7) for x in vec]}
+
+
+# ---------------------------------------------------------------------------- ner
+def ner_available() -> bool:
+    import os
+
+    from osiris_pipeline.ner import OnnxNer
+
+    return OnnxNer.available(Path(os.getenv("OSIRIS_MODEL_DIR", str(ROOT / "models"))))
+
+
+def run_ner(case: dict, _cache: dict = {}) -> dict:  # noqa: B006 — model önbelleği
+    import os
+
+    from osiris_pipeline.ner import MODEL_SUBDIR, OnnxNer
+
+    if "n" not in _cache:
+        _cache["n"] = OnnxNer(Path(os.getenv("OSIRIS_MODEL_DIR", str(ROOT / "models"))) / MODEL_SUBDIR)
+    return {"entities": _cache["n"].extract(case["input"])}
