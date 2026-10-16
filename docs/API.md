@@ -58,7 +58,9 @@ curl -X POST https://<host>:8443/api/auth/keys \
 # → {"id":"...","api_key":"osiris_...","role":"analyst"}
 ```
 
-If `OSIRIS_API_KEY` is unset, the API runs **open** (trusted-network mode, logged warning).
+If `OSIRIS_API_KEY` is unset, the API **refuses to start**. Unauthenticated mode must be requested explicitly with `OSIRIS_INSECURE_OPEN=1` (trusted network only; every caller is `admin`).
+
+JWTs are signed **only** with `OSIRIS_JWT_SECRET` (no fallback to the API key). If it is unset, `POST /auth/token` returns `503` and bearer tokens are rejected; API keys keep working.
 
 ## 2. Roles & Access Matrix
 
@@ -223,6 +225,7 @@ curl -H "X-API-Key: <k>" https://<host>:8443/api/stats
 | 422 | Schema violation (see `detail` array) |
 | 500 | Server/DB failure (no internals leaked) |
 | 502 | Plugin ran but failed (`detail` carries the plugin message) |
+| 503 | Feature not configured (`/auth/token` without `OSIRIS_JWT_SECRET`) |
 
 ## 15. Rate Limits
 

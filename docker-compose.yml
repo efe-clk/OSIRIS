@@ -125,6 +125,8 @@ services:
       OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
       OSIRIS_REDIS_URL: redis://redis:6379/0
       OSIRIS_API_KEY: ${OSIRIS_API_KEY:-}
+      OSIRIS_JWT_SECRET: ${OSIRIS_JWT_SECRET:-}
+      OSIRIS_INSECURE_OPEN: ${OSIRIS_INSECURE_OPEN:-}
       OSIRIS_CORS_ORIGINS: http://localhost:3000
     ports:
       # Yalnızca localhost (dış erişim nginx üzerinden). 8000 dolu olabilir.

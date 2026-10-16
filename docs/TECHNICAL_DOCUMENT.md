@@ -516,8 +516,9 @@ Alert handlers (email/Telegram/webhook) plug into `AlertManager.register_handler
 | `POSTGRES_PASSWORD` | DB password (rotate via `ALTER ROLE`, then restart API) |
 | `MINIO_ROOT_USER/PASSWORD` | Object storage root (restart MinIO after change) |
 | `N8N_USER/PASSWORD` | n8n gate (first-setup value wins) |
-| `OSIRIS_API_KEY` | Operator key (admin) |
-| `OSIRIS_JWT_SECRET` | JWT signing secret (falls back to API key) |
+| `OSIRIS_API_KEY` | Operator key (admin). Required: the API refuses to start without it |
+| `OSIRIS_INSECURE_OPEN` | `1` enables keyless open mode (trusted network only) |
+| `OSIRIS_JWT_SECRET` | JWT signing secret (no fallback; unset → `/auth/token` 503) |
 | `OSIRIS_CORS_ORIGINS` | Allowed browser origins |
 
 ### 16.3 Deployment Notes

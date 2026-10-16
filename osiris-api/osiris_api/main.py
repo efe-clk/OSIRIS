@@ -10,6 +10,8 @@ import logging
 import os
 import re
 import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -21,11 +23,38 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+
+def insecure_open_enabled() -> bool:
+    """Kimliksiz açık mod yalnızca OSIRIS_INSECURE_OPEN=1 ile açıkça istenir."""
+    return os.getenv("OSIRIS_INSECURE_OPEN", "") == "1"
+
+
+def check_startup_config() -> None:
+    """Başlatma denetimi (fail-closed): anahtar yoksa ve açık mod istenmediyse reddet."""
+    if not API_KEY and not insecure_open_enabled():
+        raise RuntimeError(
+            "OSIRIS_API_KEY tanımlı değil — API başlatılmadı. Güçlü bir anahtar atayın "
+            "(openssl rand -hex 32) veya yalnızca güvenilir ağda OSIRIS_INSECURE_OPEN=1 kullanın."
+        )
+    if not API_KEY:
+        logger.warning("OSIRIS_INSECURE_OPEN=1 — API kimlik doğrulamasız çalışıyor "
+                       "(yalnızca güvenilir ağda kullanın)")
+    if not JWT_SECRET:
+        logger.warning("OSIRIS_JWT_SECRET tanımlı değil — JWT kapalı (/auth/token 503 döner)")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    check_startup_config()
+    yield
+
+
 app = FastAPI(
     title="OSIRIS API",
     version="0.2.0",
     docs_url="/docs",
     redoc_url=None,
+    lifespan=lifespan,
     description=(
         "OSIRIS OSINT platformu REST arayüzü. Kimlik: `X-API-Key` (operatör/kullanıcı) "
         "veya `Authorization: Bearer <JWT>`. Roller: viewer → analyst → admin. "
@@ -44,9 +73,9 @@ app.add_middleware(
 DATABASE_URL = os.getenv("OSIRIS_DATABASE_URL", "postgresql://osiris:osiris@localhost:5432/osiris")
 REDIS_URL = os.getenv("OSIRIS_REDIS_URL", "redis://localhost:6379/0")
 API_KEY = os.getenv("OSIRIS_API_KEY", "")
-JWT_SECRET = os.getenv("OSIRIS_JWT_SECRET", "") or API_KEY
-if not API_KEY:
-    logger.warning("OSIRIS_API_KEY tanımlı değil — API kimlik doğrulamasız çalışıyor (yalnızca güvenilir ağda kullanın)")
+# API anahtarına düşme yedeği YOK: aynı sırrın iki işte kullanılması bir sızıntıyı
+# hem operatör anahtarı hem JWT imzası olarak geçerli kılardı.
+JWT_SECRET = os.getenv("OSIRIS_JWT_SECRET", "")
 
 _collector = CollectorManager(redis_url=REDIS_URL)
 _collector_loaded = False
@@ -163,7 +192,10 @@ def _require_role(
     from osiris_api.auth import role_satisfies
 
     if not API_KEY:
-        return {"user": "anonymous", "role": "admin"}  # açık mod
+        if insecure_open_enabled():
+            return {"user": "anonymous", "role": "admin"}  # açıkça istenmiş açık mod
+        # Başlatma denetimi atlatılmışsa (örn. lifespan'sız çalıştırma) bile kapalı kal
+        raise HTTPException(status_code=503, detail="Kimlik doğrulama yapılandırılmamış")
     ident = resolve_identity(x_api_key, authorization)
     if ident is None:
         raise HTTPException(status_code=401, detail="Geçersiz kimlik bilgisi")
@@ -263,7 +295,7 @@ class TokenRequest(BaseModel):
 def issue_token(req: TokenRequest) -> dict[str, object]:
     """Operatör anahtarı karşılığında kısa ömürlü JWT üretir (1 saat)."""
     if not API_KEY or not JWT_SECRET:
-        raise HTTPException(status_code=404, detail="Jeton üretimi kapalı")
+        raise HTTPException(status_code=503, detail="Jeton üretimi kapalı (OSIRIS_JWT_SECRET yok)")
     if not _check_api_key(req.api_key):
         raise HTTPException(status_code=401, detail="Geçersiz kimlik bilgisi")
     from osiris_api.auth import ROLES, create_token

@@ -511,8 +511,9 @@ Uyarı işleyiciler (e-posta/Telegram/webhook) `AlertManager.register_handler`'a
 | `POSTGRES_PASSWORD` | DB parolası (`ALTER ROLE` ile döndürülür, sonra API restart) |
 | `MINIO_ROOT_USER/PASSWORD` | Nesne depo kökü (değişiklikte MinIO restart) |
 | `N8N_USER/PASSWORD` | n8n kapısı (ilk kurulum değeri geçerlidir) |
-| `OSIRIS_API_KEY` | Operatör anahtarı (admin) |
-| `OSIRIS_JWT_SECRET` | JWT imza sırrı (yoksa API anahtarına düşer) |
+| `OSIRIS_API_KEY` | Operatör anahtarı (admin). Zorunlu: yoksa API başlamaz |
+| `OSIRIS_INSECURE_OPEN` | `1` ise anahtarsız açık mod (yalnızca güvenilir ağ) |
+| `OSIRIS_JWT_SECRET` | JWT imza sırrı (yedeği yok; yoksa `/auth/token` 503) |
 | `OSIRIS_CORS_ORIGINS` | İzinli tarayıcı kaynakları |
 
 ### 16.3 Dağıtım Notları

@@ -4,7 +4,7 @@ Tasarım notları:
 - `alg` sabit `HS256` kabul edilir; `none` dahil başka alg reddedilir
   (algoritma-karışıklığı saldırılarına karşı).
 - İmza karşılaştırması `hmac.compare_digest` ile sabit sürede yapılır.
-- Gizli anahtar: `OSIRIS_JWT_SECRET`, yedeği `OSIRIS_API_KEY`.
+- Gizli anahtar: yalnızca `OSIRIS_JWT_SECRET` (API anahtarına düşme yedeği yok).
 """
 
 from __future__ import annotations

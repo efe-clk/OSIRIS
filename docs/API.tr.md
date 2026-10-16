@@ -58,7 +58,9 @@ curl -X POST https://<sunucu>:8443/api/auth/keys \
 # → {"id":"...","api_key":"osiris_...","role":"analyst"}
 ```
 
-`OSIRIS_API_KEY` tanımsızsa API **açık** çalışır (güvenilir-ağ modu, uyarı loglanır).
+`OSIRIS_API_KEY` tanımsızsa API **başlamaz**. Kimliksiz mod yalnızca `OSIRIS_INSECURE_OPEN=1` ile açıkça istenebilir (yalnızca güvenilir ağda; her çağıran `admin` sayılır).
+
+JWT'ler **yalnızca** `OSIRIS_JWT_SECRET` ile imzalanır (API anahtarına düşme yedeği yok). Tanımsızsa `POST /auth/token` `503` döner ve Bearer jetonlar reddedilir; API anahtarları çalışmaya devam eder.
 
 ## 2. Roller & Yetki Matrisi
 
@@ -223,6 +225,7 @@ curl -H "X-API-Key: <a>" https://<sunucu>:8443/api/stats
 | 422 | Şema ihlali (ayrıntı `detail` dizisinde) |
 | 500 | Sunucu/DB hatası (iç detay sızmaz) |
 | 502 | Plugin çalıştı ama başarısız oldu (`detail` plugin mesajını taşır) |
+| 503 | Özellik yapılandırılmamış (`OSIRIS_JWT_SECRET` olmadan `/auth/token`) |
 
 ## 15. Hız Sınırları
 
