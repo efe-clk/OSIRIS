@@ -25,7 +25,7 @@ jobs:
           pip install -e ./osiris-query
           pip install -e ./osiris-api
           pip install -e ./osiris-cli
-          pip install pytest pytest-cov httpx
+          pip install pytest pytest-cov httpx jsonschema
       - name: Plugin bağımlılıkları
         run: |
           for req in plugins/*/requirements.txt; do pip install -r "$req"; done

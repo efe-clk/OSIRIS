@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://osiris.local/schemas/queue_message.schema.json",
+  "title": "osiris:raw_items kuyruk mesajı",
+  "description": "Collector → pipeline. Redis'te UTF-8 JSON dizgesi; en fazla 512000 bayt. source_id R2'de eklendi (yoksa null sayılır).",
+  "type": "object",
+  "required": ["plugin_id", "item", "collected_at"],
+  "additionalProperties": false,
+  "properties": {
+    "plugin_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"},
+    "source_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "item": {"$ref": "collected_item.schema.json"},
+    "collected_at": {"type": "number", "description": "Unix epoch saniye (kesirli)"}
+  }
+}

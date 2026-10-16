@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://osiris.local/schemas/collected_item.schema.json",
+  "title": "CollectedItem",
+  "description": "Plugin'in ürettiği tek veri birimi (osiris.plugin.CollectedItem.model_dump()).",
+  "type": "object",
+  "required": ["url", "title", "raw_content", "published_at", "metadata", "tags"],
+  "additionalProperties": false,
+  "properties": {
+    "url": {"type": ["string", "null"], "maxLength": 2048},
+    "title": {"type": ["string", "null"], "maxLength": 500},
+    "raw_content": {"type": "string"},
+    "published_at": {"type": ["string", "null"], "maxLength": 100, "description": "Kaynağın verdiği ham tarih dizgesi (ayrıştırılmaz)"},
+    "metadata": {"type": "object"},
+    "tags": {"type": "array", "items": {"type": "string"}}
+  }
+}
