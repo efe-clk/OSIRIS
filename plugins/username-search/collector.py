@@ -10,6 +10,7 @@ Site DB'si Maigret data.json uyumludur (sites_db ile tam DB verilebilir).
 from __future__ import annotations
 
 import json
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -24,6 +25,34 @@ _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{1,63}$")
 _DEFAULT_DB = Path(__file__).parent / "sites.json"
 _FULL_DB = Path(__file__).parent / "sites_full.json"
+_PLUGIN_DIR = Path(__file__).resolve().parent
+
+
+def _allowed_db_dirs() -> list[Path]:
+    """API config'inden gelen `sites_db` yalnızca bu dizinlerdeki dosyaları gösterebilir."""
+    dirs = [_PLUGIN_DIR]
+    extra = os.getenv("OSIRIS_USERNAME_DB_DIR")
+    if extra:
+        dirs.append(Path(extra).resolve())
+    return dirs
+
+
+def resolve_sites_db(value: str) -> Path:
+    """Güvenilmeyen `sites_db` değerini izinli dizinlere kilitler (yol geçişi yok).
+
+    Göreli ad izinli dizinlerde aranır; mutlak yol yalnızca izinli bir dizinin
+    altındaysa kabul edilir. Aksi halde ValueError (sunucuda rastgele dosya okuma
+    engellenir).
+    """
+    if not isinstance(value, str) or not value or len(value) > 1024 or "\0" in value:
+        raise ValueError("sites_db geçersiz")
+    raw = Path(value)
+    candidates = [raw.resolve()] if raw.is_absolute() else [(d / raw).resolve() for d in _allowed_db_dirs()]
+    for cand in candidates:
+        if cand.suffix == ".json" and any(cand.is_relative_to(d) for d in _allowed_db_dirs()) \
+                and cand.is_file():
+            return cand
+    raise ValueError("sites_db izinli dizinlerde bulunamadı (plugin dizini veya OSIRIS_USERNAME_DB_DIR)")
 
 
 def _as_list(value) -> list[str]:
@@ -146,8 +175,9 @@ class UsernameSearchCollector(BaseCollector):
         if not username or not isinstance(username, str) or not _USERNAME_RE.match(username):
             return CollectionResult(items=[], success=False, error="Geçersiz username")
         try:
-            sites = self.load_sites(cfg.get("sites_db"),
-                                    full=bool(cfg.get("full", False)))
+            db = cfg.get("sites_db")
+            db_path = resolve_sites_db(db) if db else None
+            sites = self.load_sites(db_path, full=bool(cfg.get("full", False)))
         except ValueError as exc:
             return CollectionResult(items=[], success=False, error=str(exc))
         only = cfg.get("sites")

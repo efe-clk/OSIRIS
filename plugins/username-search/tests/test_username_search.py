@@ -135,3 +135,25 @@ def test_raw_maigret_wrapper_tolerated(tmp_path) -> None:
     assert list(sites) == ["Demo"]
     assert sites["Demo"]["presence"] == ["hos geldin"]
     assert sites["Demo"]["tags"] == ["tek-etiket"]
+
+
+def test_untrusted_sites_db_locked_to_allowed_dirs(tmp_path, monkeypatch) -> None:
+    """E13: API config'indeki sites_db sunucuda rastgele dosya okutamamalı."""
+    c = UsernameSearchCollector()
+    outside = tmp_path / "db.json"
+    outside.write_text('{"Demo": {"url": "https://x/{username}"}}')
+    for bad in [str(outside), "../../../../etc/passwd", "/etc/passwd", "sites.json/../../x.json",
+                "yok.json", "manifest.json/..", "x\0.json"]:
+        res = c.collect({"username": "osirisbot", "sites_db": bad})
+        assert res.success is False, bad
+    # Plugin dizinindeki dosya adı kabul edilir
+    assert ucol.resolve_sites_db("sites.json").name == "sites.json"
+    # OSIRIS_USERNAME_DB_DIR ile operatörün açıkça izin verdiği dizin
+    monkeypatch.setenv("OSIRIS_USERNAME_DB_DIR", str(tmp_path))
+    assert ucol.resolve_sites_db(str(outside)) == outside.resolve()
+    assert ucol.resolve_sites_db("db.json") == outside.resolve()
+    # Uzantı .json olmalı
+    (tmp_path / "gizli.txt").write_text("{}")
+    import pytest
+    with pytest.raises(ValueError):
+        ucol.resolve_sites_db("gizli.txt")

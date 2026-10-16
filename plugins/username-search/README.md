@@ -27,8 +27,11 @@ DB'yi güncellemek için:
 python3 plugins/username-search/tools/build_full_db.py
 ```
 
-Özel/ham Maigret `data.json` da doğrudan verilebilir (`sites_db` yolu —
-sarmalayıcı, `presenseStrs` yazım hatası ve dize-liste alanları tolere edilir).
+Özel/ham Maigret `data.json` da verilebilir (`sites_db` — sarmalayıcı,
+`presenseStrs` yazım hatası ve dize-liste alanları tolere edilir). Güvenlik
+nedeniyle `sites_db` yalnızca plugin dizinindeki ya da operatörün
+`OSIRIS_USERNAME_DB_DIR` ile izin verdiği dizindeki bir `.json` dosyasını
+gösterebilir; başka yollar reddedilir.
 
 Desteklenen `checkType` değerleri: `status_code`, `message`
 (`presenceStrs`/`absenceStrs`), `response_url`. Bilinmeyen türler atlanır.
