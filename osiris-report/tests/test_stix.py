@@ -56,3 +56,22 @@ def test_ipv6_maps_to_ipv6_addr() -> None:
     patterns = [o.get("pattern", "") for o in bundle["objects"]]
     assert any("ipv6-addr" in p for p in patterns)
     assert "identity" in kinds
+
+
+def test_stix_deterministic_with_injected_clock_and_id(tmp_path) -> None:
+    from datetime import UTC, datetime
+
+    import pytest
+    from osiris_report.generator import ReportGenerator
+
+    gen = ReportGenerator(output_dir=tmp_path)
+    ents = [{"type": "ip", "value": "93.184.216.34"}, {"type": "cve", "value": "cve-2024-1"}]
+    kw = {"now": datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+          "bundle_id": "bundle--00000000-0000-4000-8000-000000000001"}
+    a = gen.generate_stix("OSIRIS", "t", ents, **kw)
+    assert a == gen.generate_stix("OSIRIS", "t", ents, **kw)
+    assert '"created": "2026-01-02T03:04:05.000Z"' in a
+    with pytest.raises(ValueError):
+        gen.generate_stix("OSIRIS", "t", ents, bundle_id="nope")
+    with pytest.raises(ValueError):
+        gen.generate_stix("OSIRIS", "t", ents, now=datetime(2026, 1, 1))

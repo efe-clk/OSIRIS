@@ -132,10 +132,26 @@ padding:0 1rem;color:#1a1a1a}h1{border-bottom:2px solid #333}h3{color:#444}
     }
 
     def generate_stix(self, identity_name: str, title: str,
-                      entities: list[dict[str, Any]]) -> str:
-        """STIX 2.1 Bundle üretir (identity + indicator + observed-data)."""
-        now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        bundle_id = f"bundle--{uuid.uuid4()}"
+                      entities: list[dict[str, Any]], *,
+                      now: datetime | None = None,
+                      bundle_id: str | None = None) -> str:
+        """STIX 2.1 Bundle üretir (identity + indicator + observed-data).
+
+        ``now`` ve ``bundle_id`` verilirse çıktı bayt bayt deterministiktir
+        (docs/SOZLESME.md §3; fixtures/stix). Verilmezse şimdiki zaman ve
+        rastgele (uuid4) bundle kimliği kullanılır.
+        """
+        if now is None:
+            now = datetime.now(UTC)
+        elif now.tzinfo is None:
+            raise ValueError("now saat dilimi içermeli (UTC)")
+        now = now.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        if bundle_id is None:
+            bundle_id = f"bundle--{uuid.uuid4()}"
+        elif not bundle_id.startswith("bundle--"):
+            raise ValueError("bundle_id 'bundle--<uuid>' biçiminde olmalı")
+        else:
+            uuid.UUID(bundle_id[len("bundle--"):])  # biçim doğrulama
         identity_id = f"identity--{uuid.uuid5(uuid.NAMESPACE_DNS, 'osiris.local')}"
         objects: list[dict[str, Any]] = [
             {
