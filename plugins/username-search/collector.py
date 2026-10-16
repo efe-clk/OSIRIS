@@ -12,10 +12,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
@@ -26,6 +28,34 @@ _USERNAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{1,63}$")
 _DEFAULT_DB = Path(__file__).parent / "sites.json"
 _FULL_DB = Path(__file__).parent / "sites_full.json"
 _PLUGIN_DIR = Path(__file__).resolve().parent
+
+
+class _Throttle:
+    """İstek temposu (KVKK/site şartları): genel hız + host başına aralık.
+
+    ``rate_per_sec`` tüm işçiler için toplam üst sınırdır (0 = sınırsız);
+    ``per_host_interval`` aynı host'a ardışık iki istek arasındaki en kısa
+    süredir (saniye). İş parçacığı güvenlidir; bekleme çağıran işçide yapılır.
+    """
+
+    def __init__(self, rate_per_sec: float, per_host_interval: float,
+                 clock=time.monotonic, sleep=time.sleep) -> None:
+        self._gap = 1.0 / rate_per_sec if rate_per_sec > 0 else 0.0
+        self._host_gap = max(0.0, per_host_interval)
+        self._clock, self._sleep = clock, sleep
+        self._lock = threading.Lock()
+        self._next_any = 0.0
+        self._next_host: dict[str, float] = {}
+
+    def wait(self, host: str) -> None:
+        with self._lock:
+            now = self._clock()
+            start = max(now, self._next_any, self._next_host.get(host, 0.0))
+            self._next_any = start + self._gap
+            self._next_host[host] = start + self._host_gap
+        delay = start - now
+        if delay > 0:
+            self._sleep(delay)
 
 
 def _allowed_db_dirs() -> list[Path]:
@@ -121,9 +151,11 @@ class UsernameSearchCollector(BaseCollector):
         return sites
 
     def _check_one(self, site: str, rule: dict, username: str,
-                   timeout: int) -> CollectedItem | None:
+                   timeout: int, throttle: _Throttle | None = None) -> CollectedItem | None:
         """Tek siteyi yoklar. Bulunursa öğe, yoksa/bilinmezse None."""
         profile_url = rule["url"].replace("{username}", quote(username, safe=""))
+        if throttle is not None:
+            throttle.wait((urlsplit(profile_url).hostname or "").lower())
         session = requests.Session()
         session.headers.update(_HEADERS)
         try:
@@ -201,11 +233,21 @@ class UsernameSearchCollector(BaseCollector):
             timeout = max(5, min(int(cfg.get("timeout", 15)), 30))
         except (TypeError, ValueError):
             timeout = 15
+        try:
+            rate = float(cfg.get("rate_per_sec", 10))
+            rate = 0.0 if rate <= 0 else max(0.1, min(rate, 50.0))
+        except (TypeError, ValueError):
+            rate = 10.0
+        try:
+            host_ms = max(0, min(int(cfg.get("per_host_interval_ms", 1000)), 60_000))
+        except (TypeError, ValueError):
+            host_ms = 1000
+        throttle = _Throttle(rate, host_ms / 1000)
         names = sorted(sites)[:max_sites]
         items: list[CollectedItem] = []
         unknown = 0
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(self._check_one, n, sites[n], username, timeout): n
+            futures = {pool.submit(self._check_one, n, sites[n], username, timeout, throttle): n
                        for n in names}
             for future in as_completed(futures):
                 try:

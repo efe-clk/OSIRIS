@@ -43,4 +43,8 @@ Desteklenen `checkType` değerleri: `status_code`, `message`
 - Erişilemeyen siteler "bilinmiyor" sayılıp atlanır; tek site hatası
   taramayı durdurmaz.
 - Kibarlık: varsayılan 10 paralel işçi, site başına 15 sn zaman aşımı.
-  Hedefe yüklenmemek için `workers`/`timeout` değerlerini makul tutun.
+- Tempo (KVKK / site kullanım şartları): `rate_per_sec` tüm siteler için
+  toplam istek/sn üst sınırıdır (varsayılan 10, en fazla 50, `0` = sınırsız);
+  `per_host_interval_ms` aynı host'a ardışık iki istek arasındaki en kısa
+  süredir (varsayılan 1000). Örn. 200 site ≈ en az 20 sn sürer — senkron
+  `/collect` çağrısında Nginx'in 60 sn `proxy_read_timeout` sınırını gözetin.

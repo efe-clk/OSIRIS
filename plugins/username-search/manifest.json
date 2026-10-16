@@ -12,6 +12,8 @@
     "max_sites": {"type": "integer", "default": 200},
     "workers": {"type": "integer", "default": 10},
     "timeout": {"type": "integer", "default": 15},
+    "rate_per_sec": {"type": "number", "default": 10, "description": "Tüm siteler için toplam istek/sn üst sınırı (0 = sınırsız, en fazla 50)"},
+    "per_host_interval_ms": {"type": "integer", "default": 1000, "description": "Aynı host'a ardışık istekler arası en kısa süre (ms)"},
     "full": {"type": "boolean", "default": false, "description": "Tam DB (2500+ site: Maigret+WhatsMyName birleşik)"},
     "sites_db": {"type": "string", "description": "Özel site DB yolu (Maigret data.json uyumlu)"}
   },

@@ -157,3 +157,45 @@ def test_untrusted_sites_db_locked_to_allowed_dirs(tmp_path, monkeypatch) -> Non
     import pytest
     with pytest.raises(ValueError):
         ucol.resolve_sites_db("gizli.txt")
+
+
+def test_throttle_global_rate_and_per_host_interval() -> None:
+    t = [0.0]
+    slept = []
+
+    def sleep(d):
+        slept.append(round(d, 6))
+        t[0] += d
+
+    th = ucol._Throttle(rate_per_sec=4, per_host_interval=1.0, clock=lambda: t[0], sleep=sleep)
+    th.wait("a.com")   # 0.00 hemen
+    th.wait("b.com")   # genel aralık 0.25
+    th.wait("a.com")   # a.com için 1.0 dolmalı → 1.0'a kadar bekler
+    th.wait("c.com")   # genel aralık: 1.25
+    assert slept == [0.25, 0.75, 0.25]
+    assert t[0] == 1.25
+
+
+def test_throttle_unlimited_rate() -> None:
+    slept = []
+    th = ucol._Throttle(0, 0, clock=lambda: 0.0, sleep=slept.append)
+    for h in ("a", "a", "b"):
+        th.wait(h)
+    assert slept == []
+
+
+def test_collect_passes_throttle_config(monkeypatch) -> None:
+    seen = {}
+
+    class Spy(ucol._Throttle):
+        def __init__(self, rate, host_gap, **kw):
+            seen["args"] = (rate, host_gap)
+            super().__init__(0, 0)
+
+    monkeypatch.setattr(ucol, "_Throttle", Spy)
+    c = UsernameSearchCollector()
+    monkeypatch.setattr(c, "_check_one", lambda *a: None)
+    c.collect({"username": "osirisbot", "sites": ["GitHub"], "rate_per_sec": 999, "per_host_interval_ms": -5})
+    assert seen["args"] == (50.0, 0.0)
+    c.collect({"username": "osirisbot", "sites": ["GitHub"], "rate_per_sec": "x"})
+    assert seen["args"] == (10.0, 1.0)
