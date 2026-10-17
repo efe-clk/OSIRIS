@@ -141,15 +141,70 @@ services:
       - "127.0.0.1:8001:8000"
     profiles: ["api", "full"]
 
-  # Kuyruk işçisi (profil: worker) — osiris:stream:raw_items'i tüketir, DB'ye yazar,
-  # saklama süresi dolan öğeleri siler (OSIRIS_RETENTION_DAYS!). Açıkça başlatılır:
+  # --- Veri katmanı (R5): Rust işçisi + collector (profil: worker) -------------
+  # Kuyruk işçisi — osiris:stream:raw_items'i tüketir, DB'ye yazar, saklama süresi dolan
+  # öğeleri siler (OSIRIS_RETENTION_DAYS!). Geçiş: önce OSIRIS_PIPELINE_SHADOW=1 ile gölge
+  # mod (Python işçisi worker-python profilinde çalışırken karşılaştırır, yazmaz).
   #   python models/download.py && docker compose --profile worker up -d --build
   osiris-pipeline:
     build:
       context: .
+      dockerfile: deploy/docker/Dockerfile.server
+    image: osiris-server:0.1.0
+    container_name: osiris-pipeline
+    restart: unless-stopped
+    mem_limit: 2g
+    logging: *default-logging
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["pipeline", "--loop", "--interval", "5", "--batch", "50"]
+    environment:
+      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
+      OSIRIS_REDIS_URL: redis://redis:6379/0
+      OSIRIS_EMBEDDING_MODEL: ${OSIRIS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
+      OSIRIS_RETENTION_INTERVAL: ${OSIRIS_RETENTION_INTERVAL:-3600}
+      OSIRIS_PIPELINE_CONSUMER: osiris-pipeline-rust-1
+      OSIRIS_PIPELINE_SHADOW: ${OSIRIS_PIPELINE_SHADOW:-0}
+    volumes:
+      - ./models:/app/models:ro
+    profiles: ["worker"]
+
+  # Collector — sources.schedule'a göre toplar (E2). Zamanlama VARSAYILAN KAPALI:
+  # kaynakların schedule değerlerini gözden geçirdikten sonra OSIRIS_SCHEDULER=on.
+  osiris-collector:
+    image: osiris-server:0.1.0
+    container_name: osiris-collector
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *default-logging
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      osiris-pipeline:
+        condition: service_started
+    command: ["collector"]
+    environment:
+      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
+      OSIRIS_REDIS_URL: redis://redis:6379/0
+      OSIRIS_SCHEDULER: ${OSIRIS_SCHEDULER:-off}
+      OSIRIS_TOR_SOCKS: ${OSIRIS_TOR_SOCKS:-tor:9050}
+      OSIRIS_I2P_HTTP_PROXY: ${OSIRIS_I2P_HTTP_PROXY:-i2pd:4444}
+    profiles: ["worker"]
+
+  # Python işçisi (yedek / gölge karşılaştırmasının referansı) — profil: worker-python.
+  # Geri dönüş: docker compose stop osiris-pipeline && docker compose --profile worker-python up -d
+  osiris-pipeline-python:
+    build:
+      context: .
       dockerfile: deploy/docker/Dockerfile.pipeline
     image: osiris-pipeline:0.1.0
-    container_name: osiris-pipeline
+    container_name: osiris-pipeline-python
     restart: unless-stopped
     mem_limit: 2g
     logging: *default-logging
@@ -167,7 +222,7 @@ services:
       OSIRIS_PIPELINE_CONSUMER: osiris-pipeline-1
     volumes:
       - ./models:/app/models:ro
-    profiles: ["worker"]
+    profiles: ["worker-python"]
 
   osiris-web-ui:
     build:
