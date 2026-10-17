@@ -14,9 +14,12 @@ fn fixture(name: &str) -> Value {
 }
 
 fn root() -> Option<PathBuf> {
+    // cargo test crate dizininde çalışır: göreli OSIRIS_MODEL_DIR repo köküne göre çözülür
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let r = std::env::var("OSIRIS_MODEL_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models"));
+        .unwrap_or_else(|_| PathBuf::from("models"));
+    let r = if r.is_absolute() { r } else { repo.join(r) };
     let _ = model_dir();
     if ner::OnnxNer::available(&r)
         && r.join(embed::LOCAL_DIR).join("model_optimized.onnx").is_file()
