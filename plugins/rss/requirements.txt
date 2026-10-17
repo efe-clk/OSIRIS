@@ -1,3 +1,0 @@
-feedparser>=6.0
-requests>=2.31
-osiris-sdk>=0.1.0

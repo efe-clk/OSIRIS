@@ -1,4 +1,4 @@
-//! `fixtures/ner` ve `fixtures/embedding` (model gerekir: `python models/download.py`).
+//! `fixtures/ner` ve `fixtures/embedding` (model gerekir: `osiris-server models`).
 //! Model yoksa atlanır; `OSIRIS_REQUIRE_MODELS=1` ise atlamak hatadır (CI entegrasyon işi).
 
 use osiris_pipeline::{embed, model_dir, ner};

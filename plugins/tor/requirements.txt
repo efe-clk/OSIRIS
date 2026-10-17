@@ -1,3 +1,0 @@
-requests[socks]>=2.31
-beautifulsoup4>=4.12
-osiris-sdk>=0.1.0

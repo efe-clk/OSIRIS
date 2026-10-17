@@ -19,7 +19,7 @@ pub struct Embedder {
 }
 
 impl Embedder {
-    /// Yalnızca `models/download.py`'nin indirdiği yerel dosyalar (ağdan indirme yok).
+    /// Yalnızca `osiris-server models`'ın indirdiği yerel dosyalar (ağdan indirme yok).
     pub fn load(root: &Path, name: &str) -> Result<Self> {
         if name != DEFAULT_MODEL {
             anyhow::bail!("desteklenen embedding modeli yalnızca {DEFAULT_MODEL}");
