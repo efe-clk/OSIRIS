@@ -8,7 +8,8 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
 | R1 — Doküman + güvenlik düzeltmeleri | ✅ Tamamlandı | `master` |
 | R2 — Geçiş sözleşmesi | ✅ Tamamlandı | `master` |
 | R3 — Geçiş dostu altyapı | ✅ Tamamlandı | `master` |
-| R4–R7 | ⏳ Başlamadı | — |
+| R4 — Rust iskeleti + PyO3 köprüsü | ✅ Tamamlandı | `master` |
+| R5–R7 | ⏳ Başlamadı | — |
 
 ## Kararlar (kullanıcı onayı, 2026-10-16)
 
@@ -134,3 +135,92 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
    Ardından: `docker compose --profile worker up -d --build`. Eski öğeleri vektörlemek istersen: `docker compose exec osiris-pipeline osiris-pipeline --reembed`.
 5. MinIO ve FreshRSS konteynerlerini kaldır: `docker compose up -d --remove-orphans`. Birimler (`miniodata`, `freshrssdata`) silinmez. FreshRSS'te akış listesi varsa önce OPML olarak dışa aktar.
 6. Tor/I2P isteniyorsa: `docker compose --profile darknet up -d --build`.
+
+## R4 (2026-10-17)
+
+**Yapılanlar**
+- **Cargo workspace** (repo kökü, `crates/*`), `rust-toolchain.toml` → Rust **1.99.1**, `rustfmt.toml`,
+  `deny.toml`. Sürümler crates.io / PyPI'dan kontrol edildi: pyo3 0.30.1, maturin 1.15.0,
+  regex 1.13.1, fancy-regex 0.19.2, sha2 0.11.1, ryu 1.0.23, ryu-js 1.0.3, serde_json 1.0.154,
+  unicode-normalization 0.1.26.
+- **`osiris-hash`:** `content_hash` normalizasyonu. bs4 4.15 + CPython 3.11.16 `html.parser`
+  `get_text(" ", strip=True)` davranışının birebir portu (iki geçişli `feed`/`close`,
+  geri izlemeli regex uç noktaları, dize kapları, `already_closed_empty_element`). Entity /
+  Windows-1252 / boş öğe tabloları bs4'ten üretiliyor (`tools/gen_html_tables.py`, CI `--check`).
+  Ayrıca RFC 8785 (JCS), Python `json.dumps` v1 biçimi (`float.__repr__` dahil), audit zinciri ve
+  doğrulama.
+- **`osiris-extract`:** regex varlık çıkarma. Python `re` farkları kapatıldı (`\b` → Python kelime
+  sınıfı, `IGNORECASE` ile `[a-z]`'ye İ/ı/ſ/K eklendi, Python `\s`, Python `ipaddress` IPv4 kuralları).
+- **`osiris-security`:** SSRF denetimi (CPython `urlsplit` portu, Python `ipaddress` ayrıştırma ve
+  `str()` biçimi, engelli bloklar, fail-closed DNS, enjekte edilebilir `Resolver`) ve sanitizer'lar.
+- **`osiris-py` (PyO3 + maturin, modül `osiris_native`):** Python tarafında `osiris/_native.py`
+  arka ucu seçiyor (`OSIRIS_NATIVE=rust|python`, varsayılan `rust`). Rust seçilip modül
+  yüklenemezse süreç açık bir hatayla duruyor, Python'a sessizce düşmüyor.
+  Rust'ı çağıran yerler: `security.assert_safe_url/resolve_safe_ips/sanitize_*/mask_secret`,
+  `audit.canonical_payload/chain_hash/verify_records`, `ProcessingPipeline.clean`,
+  `extract_entities` (regex kısmı) ve `content_hash`. Python uygulamaları `_py_*` adıyla duruyor.
+- **Fixture'lar:** Rust, `fixtures/hash`, `fixtures/extract` ve `fixtures/audit` dosyalarının
+  hepsini geçiyor. Yeni `fixtures/security/cases.json` (83 durum, hata iletileri dahil)
+  eklendi; Python ve Rust ikisi de geçiyor.
+- **Eşdeğerlik testleri (`tests/golden/test_native_parity.py`):** HTML, regex, audit, URL, host
+  ve sanitizer alanlarında Python ↔ Rust karşılaştırması yapılıyor; CI'da tohumlu 3000'er girdiyle
+  koşuyor. Yerelde 200 000'er token düzeyinde ve 600 000 karakter düzeyinde rastgele girdi
+  denendi, **hiç fark çıkmadı**. Kötü niyetli 200 000 karakterlik girdilerde Rust doğrusal
+  çalışıyor (ör. `<title>&&&…`: Rust 7 ms, Python 121 ms).
+- **K1:** `osiris-core/` (C++) ve CMake silindi, CI'daki `cpp-build` işi kaldırıldı. Dokümanlar iki
+  dilde güncellendi (README, ARCHITECTURE, TECHNICAL_DOCUMENT/TEKNIK_DOKUMAN, CONTRIBUTING).
+  Eskimiş `osiris:raw_items` kuyruk adı da düzeltildi.
+- **CI:** yeni `rust` işi (`cargo fmt --check`, `clippy --all-targets -D warnings`,
+  `cargo test --locked`) ve `cargo-deny` işi eklendi. Python işleri `osiris-py`'yi derleyip
+  testleri **iki yolda** koşuyor (varsayılan Rust + kapsam, sonra `OSIRIS_NATIVE=python`).
+  Entegrasyon ve sözleşme işi de Rust yolunu kullanıyor.
+- **Docker:** `Dockerfile.api` ve `Dockerfile.pipeline` artık çok aşamalı:
+  `rust:1.99.1-slim-trixie` aşamasında `maturin build --locked` ile abi3 tekerleği derleniyor.
+  `.dockerignore`'a `target/` ve `models/` eklendi (modeller 414 MB'ı build bağlamına
+  taşıyordu).
+- **Testler:** Rust 17 test (fixture'lar dahil). Python birim testleri Rust yolunda 447, Python
+  yolunda 446 + 1 atlama. Entegrasyon 15/15 (iki yolda). Model golden 20/20. Sözleşme 144/144
+  (API Rust yolunda). Modelsiz kapsam %81. `cargo deny`: advisories, bans, licenses ve sources
+  temiz.
+
+**Yeni güvenlik bulgusu — E14 (düzeltildi, iki yolda)**
+- `assert_safe_url`, `http://127.0.0.1\x.saldirgan.example/` adresini kabul ediyordu. `urlparse`
+  host'u `127.0.0.1\x.saldirgan.example` olarak görüyordu ve saldırganın joker DNS kaydı genel bir
+  IP dönerse denetim geçiyordu. requests/urllib3 ise ters eğik çizgiyi yetki bölümünün sonu
+  sayıp bağlantıyı **127.0.0.1**'e açıyordu (doğrulandı: urllib3 2.8.0, requests 2.34.2).
+- Düzeltme: kırpılmış URL'de ters eğik çizgi, C0 kontrol karakteri veya DEL varsa red
+  (`URL geçersiz karakter içeriyor`). Regresyon testleri `test_security.py` dosyasında ve
+  `fixtures/security` içinde.
+
+**Plandan sapmalar**
+- **Python uygulamaları henüz silinmedi.** Plan "testler iki yolu da koşar, sonra Python
+  uygulaması silinir" diyor. `_py_*` fonksiyonları şimdilik iki iş görüyor: eşdeğerlik
+  testlerinin kâhini, ve canlı sistemde Rust tekerleği derlenemezse `OSIRIS_NATIVE=python` ile
+  kullanılabilecek bir kaçış yolu. Silinmeleri R7'ye bırakıldı; istenirse şimdi silinebilir.
+- `security.py` dosyasının hepsi taşınmadı. HTTP, soket ve bs4'e bağlı olan `fetch_url`,
+  `safe_create_connection`, `resolve_proxy`, `safe_title` ve `cap_list` Python'da kaldı (R5'te
+  host HTTP istemcisi bunların yerini alacak). Bu fonksiyonlar denetim için Rust'ı çağırıyor.
+- Plandaki kütüphane tablosunda `serde_json_canonicalizer` geçiyordu; onun yerine JCS `ryu-js` ile
+  elle yazıldı. Gerekçe: Python'un sınırsız tamsayıları (`BigInt`), v1 biçimiyle ortak değer türü
+  ve tam denetim. Fixture'lar ve bulanık testlerle doğrulandı.
+- URL bölme için WHATWG (`url` crate) bilerek kullanılmadı, CPython `urlsplit` port edildi.
+  Denetimin, isteği gönderen istemciyle aynı host'u görmesi gerekiyor (E14 bunun nedenini
+  gösteriyor).
+- `osiris-py` crate'inin `cargo test`'i yok (`--exclude`); köprü pytest ile sınanıyor.
+
+**⚠ Canlı kurulum için dağıtım adımları (R4)**
+1. Migration yok. `content_hash` değişmedi (fixture'lar ve bulanık testlerle doğrulandı), yeniden
+   hash'lemeye gerek yok.
+2. İmajları yeniden derle: `docker compose --profile api --profile worker build`. İlk derlemede
+   Rust çekirdeği derlendiği için 2–4 dakika fazladan sürer.
+3. Docker dışında (venv'de) çalışan bir servis varsa önce Rust araç zincirini kur, sonra
+   `pip install ./crates/osiris-py`. Kurulmazsa servisler açık bir hatayla başlamaz. Geçici
+   çözüm: `OSIRIS_NATIVE=python`.
+4. **Davranış değişikliği (E14):** URL'sinde `\` ya da kontrol karakteri bulunan kaynaklar artık
+   reddediliyor. Var mı diye bakmak için (test DB'sinde denendi):
+   `SELECT id, name FROM sources WHERE url ~ '[\\[:cntrl:]]' OR metadata::text LIKE '%\\%';`
+   (`metadata` JSON metninde `\n`/`\t` kaçışları da eşleşir; satırları gözle kontrol et).
+
+**Sıradaki:** R5 — veri katmanı Rust'ta (`osiris-types`, `osiris-db`, `osiris-plugin`, 11 plugin,
+collector, pipeline). Açık karar maddesi: rest-api ve shodan plugin'lerinin `raw_content`'i
+(Python `str(dict)` taklidi mi, JSON'a geçiş mi; JSON'a geçiş hash'i değiştirir).

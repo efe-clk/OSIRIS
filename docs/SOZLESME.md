@@ -1,6 +1,6 @@
 # OSIRIS — Diller Arası Geçiş Sözleşmesi
 
-> Rust geçişi **R2** · Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Durum: [RUST_GECIS_DURUMU.md](RUST_GECIS_DURUMU.md)
+> Rust geçişi **R2** (R4: Rust uygulamaları) · Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Durum: [RUST_GECIS_DURUMU.md](RUST_GECIS_DURUMU.md)
 >
 > Bu belge, Python ve Rust uygulamalarının **aynı girdiye aynı çıktıyı** vermesi gereken her
 > noktayı tanımlar. Bağlayıcı olan metin değil **veridir**:
@@ -11,6 +11,11 @@
 > | Yapısal sözleşmeler | `schemas/*.schema.json` (JSON Schema 2020-12) | `tests/golden/test_schemas.py` |
 > | API davranışı | `tests/contract/` (çalışan servise gerçek HTTP) | CI `integration` işi |
 > | DB davranışı | `tests/integration/` (gerçek PostgreSQL) | CI `integration` işi |
+> | Rust uygulaması (R4) | `crates/osiris-{hash,extract,security}` aynı fixture'ları `cargo test` ile okur | `tests/golden/test_native_parity.py` (rastgele girdiyle Python ↔ Rust) |
+>
+> **Uygulama seçimi (R4):** Python servisleri §1, §2, §8 ve §12'yi varsayılan olarak Rust
+> uygulamasıyla çalıştırır (`osiris_native`, `OSIRIS_NATIVE=rust`); Python referansı
+> `OSIRIS_NATIVE=python` ile seçilir. CI tüm testleri iki yolda da koşar.
 >
 > **Değişiklik kuralı:** `python tests/golden/generate.py --check` bir fark gösteriyorsa bu bir
 > *sözleşme değişikliğidir*. Bu belge güncellenir, fark commit'te gözden geçirilir; Rust tarafı
@@ -46,12 +51,19 @@ Notlar:
 - Hash'e yalnızca temizlenmiş metin girer; URL/başlık/kaynak girmez. Tekilleştirme **global**dir
   (`items.content_hash UNIQUE`).
 - `Café` (U+00E9) ve `Café` farklı hash üretir (bilinçli: NFC yok).
-- Referans sürümler: `beautifulsoup4 4.15.0`. bs4 sürüm yükseltmesi bir sözleşme değişikliği
-  olabilir → yükseltmede `generate.py --check` zorunlu.
+- Referans sürümler: `beautifulsoup4 4.15.0` + CPython **3.11.16** `html.parser`. bs4 sürüm
+  yükseltmesi bir sözleşme değişikliği olabilir → yükseltmede `generate.py --check` zorunlu.
+- **Rust (R4):** `crates/osiris-hash/src/html/` bu iki sürümün birebir portudur (tokenizer
+  regex'lerinin geri izleme sonuçları dahil; bs4'ün tek `feed()` + `close()` çağrısı iki geçiş
+  olarak modellenir). Entity, Windows-1252, boş öğe ve dize kabı tabloları bs4'ten üretilir
+  (`python tools/gen_html_tables.py`, CI `--check`). Artık Python sürümü davranışı değiştiremez:
+  `content_hash` Rust'ta dondurulmuştur.
+- Kenar durum: ondalık sayısal referans 4300 haneyi aşarsa (`&#111…;`) CPython `int()` sınırı
+  bs4'ü çökertir; adım 2 atlanır ve ham metin kullanılır (Rust aynı davranır).
 
 ## 2. Denetim (audit) zinciri
 
-Kaynak: `osiris-sdk/osiris/audit.py`. Fixture: `fixtures/audit/cases.json`. Migration 003.
+Kaynak: `osiris-sdk/osiris/audit.py`, Rust: `crates/osiris-hash/src/audit.rs`. Fixture: `fixtures/audit/cases.json`. Migration 003.
 
 **Kayıt** (hash'e giren nesne) — tam olarak dört anahtar:
 `{"user_id": str, "action": str, "resource": str, "detail": object}`. `id`, `ts`, `prev_hash` girmez.
@@ -161,8 +173,15 @@ ayrıntı içermez; kodlar 400/401/403/404/409/413/422/500/502/503.
 
 ## 8. Varlık çıkarma (regex)
 
-Kaynak: `ProcessingPipeline.extract_entities`. Fixture: `fixtures/extract/cases.json` (NER kapalı; NER
-§11'de ayrı fixture'larla sabitlenmiştir). Python `re` Unicode modunda: `\d` ve `\b` Unicode'dur.
+Kaynak: `ProcessingPipeline.extract_entities`, Rust: `crates/osiris-extract`. Fixture:
+`fixtures/extract/cases.json` (NER kapalı; NER §11'de ayrı fixture'larla sabitlenmiştir). Python `re`
+Unicode modunda: `\d` ve `\b` Unicode'dur. Rust'a taşırken bilinmesi gereken farklar:
+
+- Kelime karakteri (`\b` için) Python'da `[\p{L}\p{N}_]`'dir; Rust `\w` işaretleri (M), Pc ve
+  ZWJ/ZWNJ'yi de içerir → `\b` yerine `(?<![\p{L}\p{N}_])` / `(?![\p{L}\p{N}_])`.
+- `IGNORECASE` ile `[a-z]` Python'da **İ ı ſ K** (U+0130, U+0131, U+017F, U+212A) karakterlerini
+  de eşler (`BİLGİ.COM` → `bi̇lgi̇.com`); Rust sınıfı elle genişletir.
+- `\s` §1'deki Python kümesidir (U+001C–U+001F dahil).
 
 | Sıra | Tip | Desen | Ek kural |
 |---|---|---|---|
@@ -220,3 +239,23 @@ Fixture: `fixtures/ner/cases.json` (model gerekir) + `osiris-pipeline/tests/test
   girer (§8). Model veya çalışma zamanı yoksa yalnızca regex çalışır (`OSIRIS_NER=off` ile de).
 - Karşılaştırma: aynı model + aynı CPU sınıfında birebir eşitlik beklenir; int8 çekirdeklerinde
   CPU'ya bağlı nadir argmax farkları görülürse fixture'a tolerans eklenmesi sözleşme değişikliğidir.
+
+## 12. Güvenlik: SSRF denetimi ve sanitizer'lar (R4)
+
+Kaynak: `osiris-sdk/osiris/security.py`, Rust: `crates/osiris-security`. Fixture:
+`fixtures/security/cases.json` (dosyadaki sabit `dns` haritasıyla; haritada olmayan host
+çözülemez). **Hata iletileri sözleşmenin parçasıdır** (kullanıcıya/plugin sonucuna yansır).
+
+- URL: boş ya da > 2048 kod noktası → red. Kırpılmış URL'de **ters eğik çizgi, C0 kontrol
+  karakteri veya DEL** → `URL geçersiz karakter içeriyor` (E14: urllib3 `\` ile yetki bölümünü
+  bitirir, `urlparse` bitirmez — `http://127.0.0.1\x.saldirgan.example/` denetimde saldırganın
+  alan adı, bağlantıda 127.0.0.1 idi). Bölme CPython 3.11.16 `urlsplit` ile birebir (WHATWG değil).
+- Şema yalnızca `http`/`https`; kullanıcı bilgisi (boş olmayan kullanıcı ya da parola) yasak;
+  `.onion` yalnızca `allow_onion` ile (DNS'e gidilmez); port 1–65535.
+- Host: kırp → küçük harf → sondaki noktalar atılır; `localhost` red; IP literali Python
+  `ipaddress` kurallarıyla (baştaki sıfırlı IPv4 literal değildir → DNS'e gider), değilse DNS.
+  Kayıt yoksa red; **herhangi bir** kayıt engelli bloktaysa red (fail-closed). IPv4-mapped IPv6
+  açılarak denetlenir; `0.0.0.0` / `::` engelli. Dönen IP'ler Python `str(ip)` biçimindedir.
+- Sanitizer'lar (`sanitize_domain`, `sanitize_hostname`, `sanitize_irc_token`,
+  `sanitize_channel`, `mask_secret`): uzunluklar kod noktası; "alfanümerik" = Python
+  `str.isalnum()` = `[\p{L}\p{N}]`.
