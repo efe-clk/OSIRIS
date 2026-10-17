@@ -101,7 +101,7 @@ jobs:
           pip install ./crates/osiris-py
           for req in plugins/*/requirements.txt; do pip install -r "$req"; done
       - uses: Swatinem/rust-cache@v2
-      - name: Rust servis ikilisi (osiris-server) + Rust model fixture'ları (NER, embedding)
+      - name: Rust servis ikilisi (osiris-server — API + işçi) + Rust model fixture'ları (NER, embedding)
         env:
           OSIRIS_MODEL_DIR: models
           OSIRIS_REQUIRE_MODELS: "1"
@@ -119,19 +119,29 @@ jobs:
         run: |
           pytest -q tests/integration -rs
           pytest -q tests/golden -k "ner or embedding or models_present" -rs
-      - name: Sözleşme (kara kutu) testleri — gerçek API'ye karşı
+      - name: Sözleşme (kara kutu) testleri — Rust API (R6, birincil) ve Python API (yedek)
         env:
           OSIRIS_API_KEY: ci-contract-admin-key-0123456789abcdef
           OSIRIS_JWT_SECRET: ci-contract-jwt-secret-0123456789abcdef
           OSIRIS_DATABASE_URL: postgresql://osiris:osiris@localhost:5432/osiris_test
           OSIRIS_REDIS_URL: redis://localhost:6379/0
-          OSIRIS_BASE_URL: http://127.0.0.1:8000
           OSIRIS_CONTRACT_API_KEY: ci-contract-admin-key-0123456789abcdef
           OSIRIS_CONTRACT_DESTRUCTIVE: "1"
         run: |
-          uvicorn osiris_api.main:app --host 127.0.0.1 --port 8000 > api.log 2>&1 &
-          for i in $(seq 60); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
-          pytest -q tests/contract || { cat api.log; exit 1; }
+          target/release/osiris-server api --addr 127.0.0.1:8000 > rust-api.log 2>&1 &
+          uvicorn osiris_api.main:app --host 127.0.0.1 --port 8001 > py-api.log 2>&1 &
+          for port in 8000 8001; do
+            for i in $(seq 60); do curl -sf http://127.0.0.1:$port/health && break; sleep 1; done
+          done
+          OSIRIS_BASE_URL=http://127.0.0.1:8000 pytest -q tests/contract || { cat rust-api.log; exit 1; }
+          OSIRIS_BASE_URL=http://127.0.0.1:8001 pytest -q tests/contract || { cat py-api.log; exit 1; }
+      - name: Python ↔ Rust API eşdeğerliği (aynı istekler, durum + gövde)
+        env:
+          OSIRIS_PARITY_PY_URL: http://127.0.0.1:8001
+          OSIRIS_PARITY_RS_URL: http://127.0.0.1:8000
+          OSIRIS_PARITY_API_KEY: ci-contract-admin-key-0123456789abcdef
+          OSIRIS_PARITY_DATABASE_URL: postgresql://osiris:osiris@localhost:5432/osiris_test
+        run: pytest -q tests/parity || { cat rust-api.log py-api.log; exit 1; }
 
   lint:
     name: Lint (ruff)
