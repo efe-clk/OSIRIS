@@ -13,8 +13,8 @@ Bu doküman, OSIRIS platformunun yüksek seviyeli mimarisini ve modül sorumlulu
 └──────────────────────────┬─────────────────────────────────┘
                             │
 ┌──────────────────────────▼─────────────────────────────────┐
-│ Çekirdek Katmanı (osiris-core, C++)                        │
-│  Koordinasyon · Zamanlama · Plugin yaşam döngüsü           │
+│ Çekirdek Katmanı (crates/, Rust — osiris_native/PyO3)      │
+│  SSRF denetimi · content_hash + denetim zinciri · regex    │
 └──────────────────────────┬─────────────────────────────────┘
                             │
 ┌──────────────────────────▼─────────────────────────────────┐
@@ -31,7 +31,7 @@ Bu doküman, OSIRIS platformunun yüksek seviyeli mimarisini ve modül sorumlulu
 ## Veri Akışı
 
 1. **Toplama** — Collector Manager zamanlanmış plugin'leri çalıştırır (tam 5 alanlı cron).
-2. **Kuyruk** — ham veri Redis kuyruğuna yazılır (`osiris:raw_items`, öğe başına 512 KB sınır).
+2. **Kuyruk** — ham veri Redis Stream'e yazılır (`osiris:stream:raw_items`, consumer group, en az bir kez, öğe başına 512 KB sınır).
 3. **İşleme** — pipeline temizler, dil tespiti yapar, varlık çıkarır, sınıflandırır, embedding üretir (opsiyonel model), içerik hash'iyle tekilleştirir.
 4. **Depolama** — işlenmiş veri PostgreSQL'e yazılır (`items`, `entities`, `item_entities`, opsiyonel `embedding` vektörü).
 5. **Analiz** — Query/Graph/Alert/Report katmanları veriyi tüketir; graf kenarları `graph_edges`'te kalıcıdır.
@@ -41,7 +41,7 @@ Bu doküman, OSIRIS platformunun yüksek seviyeli mimarisini ve modül sorumlulu
 
 | Modül | Sorumluluk | Notlar |
 |-------|-----------|--------|
-| `osiris-core` | Merkezi koordinatör, plugin yaşam döngüsü, zamanlama | Atomik durdurma bayrağı; REST `osiris-api`'de |
+| `crates/` (Rust) | SSRF denetimi, `content_hash`/denetim zinciri, regex çıkarma | Tüm Python servisleri `osiris_native` üzerinden kullanır (`OSIRIS_NATIVE`); zamanlama `osiris-collector`'da |
 | `osiris-collector` | Plugin yükleme, görev çalıştırma, kuyruğa iletme | Crash izolasyonu, tam cron, kaynak sağlık takibi |
 | `osiris-pipeline` | Temizleme, NER, sınıflandırma, embedding, depolama | Regex + ONNX NER (mBERT-hrl), anahtar kelime konuları, fastembed embedding (384 boyut); Redis Streams tüketicisi |
 | `osiris-query` | Tam metin + semantik + varlık araması | `dict_row`, doğrulanmış limitler, LIKE kaçışı |

@@ -43,7 +43,10 @@ pytest -q
 ## Code Standards
 
 - Python: `ruff` lint (see `pyproject.toml`); fix all findings before pushing.
-- C++: C++20, `-Wall -Wextra -Wpedantic` with zero warnings.
+- Rust: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace --exclude osiris-py`, `cargo deny check` — all clean.
+  After changing `crates/`, reinstall the bridge (`pip install ./crates/osiris-py`) and run
+  `pytest` twice: default (Rust) and `OSIRIS_NATIVE=python` (reference).
 - Tests: `pytest`; every module keeps tests under its `tests/` directory.
   New features require tests; the CI coverage gate (`--cov-fail-under=80`) must pass.
 - Test files must have unique basenames across the repo (no two `test_cli.py`).

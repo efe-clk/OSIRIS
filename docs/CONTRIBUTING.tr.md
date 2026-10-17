@@ -43,7 +43,10 @@ pytest -q
 ## Kod Standartları
 
 - Python: `ruff` ile lint (bkz. `pyproject.toml`); push öncesi tüm bulguları düzeltin.
-- C++: C++20, `-Wall -Wextra -Wpedantic` ile sıfır uyarı.
+- Rust: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace --exclude osiris-py`, `cargo deny check` — hepsi temiz.
+  `crates/` değişince köprüyü yeniden kurun (`pip install ./crates/osiris-py`) ve `pytest`'i iki
+  kez koşun: varsayılan (Rust) ve `OSIRIS_NATIVE=python` (referans).
 - Testler: `pytest`; her modül testlerini kendi `tests/` dizininde tutar.
   Yeni özellikler test gerektirir; CI kapsam eşiği (`--cov-fail-under=80`) geçmelidir.
 - Test dosyası adları repo genelinde benzersiz olmalıdır (iki `test_cli.py` olmaz).

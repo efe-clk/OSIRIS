@@ -95,13 +95,13 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 │                                                                 │
 │  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   │
 │  │   CLI    │   │ Web UI   │   │   Core   │   │  REST    │   │
-│  │          │   │(React/TS)│   │  (C++)   │   │  API     │   │
+│  │          │   │(React/TS)│   │  (Rust)  │   │  API     │   │
 │  └────┬─────┘   └────┬─────┘   └────┬─────┘   └────┬─────┘   │
 │       └──────────────┴──────────────┴──────────────┘          │
 │                              │                                  │
 │                    ┌─────────▼─────────┐                       │
 │                    │   API Gateway /   │                        │
-│                    │   Core Engine     │  (C++ + Python)        │
+│                    │   Core Engine     │  (Python + Rust)       │
 │                    └─────────┬─────────┘                       │
 │              ┌───────────────┼───────────────┐                 │
 │              │               │               │                  │
@@ -130,7 +130,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 |--------|-----|-----------|
 | **Arayüz** | Kullanıcı etkileşimi | CLI (Click), Web UI (React), REST (FastAPI) |
 | **API Gateway** | Bileşenleri bağlar, auth + doğrulama | Python/FastAPI (zamanlama: APScheduler, Python — `osiris-collector`) |
-| **Core Engine** | Görev yönetimi, plugin yaşam döngüsü | C++20 |
+| **Rust Çekirdek** | SSRF denetimi, content_hash/denetim, regex çıkarma (tüm servislerde ortak) | Rust (`crates/`, PyO3 köprüsü `osiris_native`) |
 | **Collector Manager** | Plugin orkestrasyonu, kuyruk iletimi | Python |
 | **Processing Pipeline** | Temizle, zenginleştir, tekilleştir, depola | Python |
 | **Storage Layer** | Kalıcı depolama | PostgreSQL + Redis |
@@ -146,7 +146,7 @@ Sistem bir VDS üzerinde 7/24 çalışır. Tüm bileşenler kullanıcı kontrol�
 
 | Dil | Alan | Gerekçe |
 |-----|------|---------|
-| **C++** (C++20) | Core Engine | Bellek verimliliği, zamanlama |
+| **Rust** (kararlı) | Çekirdek crate'ler (`crates/`) | Bellek güvenliği, diller arası sözleşmenin tek uygulaması, geçiş hedefi |
 | **Python 3.11+** | Plugin'ler, pipeline, API, analiz | Ekosistem, hız |
 | **TypeScript** | Web UI | Tipli frontend |
 | **SQL** | Sorgular, migration'lar | — |
@@ -188,11 +188,12 @@ Docker, Docker Compose (profiller: varsayılan altyapı, `api`, `ui`, `full`), N
 
 ## 5. Modüller ve Bileşenler
 
-### 5.1 Core Engine (`osiris-core`)
-- **Dil:** C++20, `-Wall -Wextra -Wpedantic`, sıfır uyarı
-- **Rol:** merkezi koordinatör
-- **Gerçekleşen:** plugin kayıt/başlat/durdur, görev listesi, atomik durdurma bayraklı (`stop_scheduler`) 1 sn zamanlayıcı döngüsü, sürümlü CLI
-- **Ertelenen:** tam cron ayrıştırma, IPC sunucusu (REST `osiris-api`'de)
+### 5.1 Rust Çekirdek (`crates/`)
+- **Dil:** Rust (kararlı, `rust-toolchain.toml` ile sabit); CI'da `cargo fmt --check`, `clippy -D warnings`, `cargo test`, `cargo deny`
+- **Rol:** tüm servislerin paylaştığı güvenlik ve sözleşme açısından kritik saf fonksiyonlar: SSRF denetimi (`osiris-security`), `content_hash` normalizasyonu + RFC 8785 + denetim zinciri (`osiris-hash`), regex varlık çıkarma (`osiris-extract`)
+- **Python köprüsü:** `osiris_native` (PyO3, `crates/osiris-py`), `OSIRIS_NATIVE=rust|python` ile seçilir (varsayılan `rust`; modül yoksa başlangıç hatası, sessiz geri dönüş yok)
+- **Sözleşme:** tüm `fixtures/` durumlarında Python referansıyla aynı çıktı, bkz. [SOZLESME.md](SOZLESME.md)
+- Eski C++ `osiris-core` iskeleti R4'te kaldırıldı (karar K1); zamanlama `osiris-collector`'da kalır (APScheduler)
 
 ### 5.2 Collector Manager (`osiris-collector`)
 - Manifest doğrulamalı plugin yükleme (bozuklar loglanıp atlanır)
@@ -289,7 +290,7 @@ sources (
 [Collector Plugin]  (doğrulanmış config, zaman aşımı, boyut sınırı)
     │  ham öğeler
     ▼
-[Redis osiris:raw_items]
+[Redis Stream osiris:stream:raw_items]
     │
     ▼
 [Processing Pipeline]
@@ -341,7 +342,7 @@ TimescaleDB yokluğu ölümcül değildir (NOTICE + yedek), stok `pgvector:pg16`
 ### 10.4 Denetim & Log
 - Hash-zincirli `audit_logs` (eşzamanlı-yazıcı kilidi + `verify_chain` denetleyici)
 - API toplama/arama/anahtar işlemleri best-effort loglanır (istekleri bozmaz)
-- Sır enterpolasyonsuz Python loglama; C++ mutex-korumalı logger
+- Sır enterpolasyonsuz Python loglama
 
 ---
 
@@ -497,7 +498,8 @@ Uyarı işleyiciler (e-posta/Telegram/webhook) `AlertManager.register_handler`'a
 |------|-------|------|
 | Python birim + kapsam | `pytest -q` | `--cov-fail-under=80` |
 | Lint | `ruff check .` | sıfır bulgu |
-| C++ derleme | `cmake --build` | `-Wall -Wextra -Wpedantic`, sıfır uyarı |
+| Rust | `cargo fmt --check` · `cargo clippy --all-targets -- -D warnings` · `cargo test` · `cargo deny check` | sıfır uyarı |
+| Rust ↔ Python eşdeğerliği | `pytest tests/golden/test_native_parity.py` (+ `OSIRIS_NATIVE=python pytest`) | aynı çıktı |
 | Compose geçerlilik | `docker compose config` | çıkış 0 |
 | DB migration | `psql -v ON_ERROR_STOP=1 -f db/migrations/*.sql` | stok `pgvector:pg16`'da temiz |
 | Canlı API duman | TestClient + Nginx üzerinden curl | auth matrisi (401/403/200) |

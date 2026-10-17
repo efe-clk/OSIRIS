@@ -191,18 +191,6 @@ jobs:
         with:
           command: check
 
-  cpp-build:
-    name: C++ derleme
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Bağımlılıklar
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev libcurl4-openssl-dev nlohmann-json3-dev
-      - name: Yapılandır ve derle
-        run: cmake -S osiris-core -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j4
-      - name: Duman testi
-        run: ./build/osiris-core --version
-
   web-ui-build:
     name: Web UI derleme
     runs-on: ubuntu-latest

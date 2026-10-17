@@ -29,7 +29,7 @@ The system is designed to run 24/7 on a VDS (Virtual Dedicated Server). All comp
 │                              │                                  │
 │                    ┌─────────▼─────────┐                       │
 │                    │   API Gateway /   │                        │
-│                    │   Core Engine     │  (C++ / Python)        │
+│                    │   Core Engine     │  (Python + Rust)       │
 │                    └─────────┬─────────┘                       │
 │              ┌───────────────┼───────────────┐                 │
 │              │               │               │                  │
@@ -52,7 +52,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for layers, data flow, and the 
 
 | Module | Language | Role | Status |
 |--------|----------|------|--------|
-| `osiris-core` | C++20 | Central coordinator, task scheduling, IPC | Skeleton (scheduler + plugin lifecycle) |
+| `crates/` | Rust | Shared core: SSRF guard, `content_hash` + audit chain, regex entity extraction — used by the Python services through `osiris_native` (PyO3) | ✅ R4 (Rust migration in progress — [plan](docs/RUST_GECIS_PLANI.md)) |
 | `osiris-collector` | Python | Manages collection plugins | ✅ Working |
 | `osiris-pipeline` | Python | Cleaning, NER, classification, embedding, storage | ✅ Working (embedding optional) |
 | `osiris-query` | Python | Full-text + semantic search | ✅ Working |
@@ -66,7 +66,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for layers, data flow, and the 
 
 ## Technology Stack
 
-- **Languages:** C++20, Python 3.11+, TypeScript
+- **Languages:** Python 3.11+, Rust (stable, pinned in `rust-toolchain.toml`), TypeScript
 - **Database:** PostgreSQL 16 (+ pgvector, TimescaleDB optional), Redis
 - **Interface:** CLI, REST API, React + Tailwind Web UI
 - **Automation:** N8N, APScheduler

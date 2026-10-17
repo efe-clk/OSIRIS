@@ -23,13 +23,13 @@ Sistem, bir VDS üzerinde 7/24 kesintisiz çalışacak şekilde tasarlanmıştı
 │                                                                 │
 │  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   │
 │  │   CLI    │   │ Web UI   │   │   Core   │   │  REST    │   │
-│  │          │   │(React/TS)│   │  (C++)   │   │  API     │   │
+│  │          │   │(React/TS)│   │  (Rust)  │   │  API     │   │
 │  └────┬─────┘   └────┬─────┘   └────┬─────┘   └────┬─────┘   │
 │       └──────────────┴──────────────┴──────────────┘          │
 │                              │                                  │
 │                    ┌─────────▼─────────┐                       │
 │                    │   API Gateway /   │                        │
-│                    │   Core Engine     │  (C++ + Python)        │
+│                    │   Core Engine     │  (Python + Rust)       │
 │                    └─────────┬─────────┘                       │
 │              ┌───────────────┼───────────────┐                 │
 │              │               │               │                  │
@@ -52,7 +52,7 @@ Katmanlar, veri akışı ve güvenlik modeli için bkz. [docs/ARCHITECTURE.tr.md
 
 | Modül | Dil | Rol | Durum |
 |-------|-----|-----|-------|
-| `osiris-core` | C++20 | Merkezi koordinatör, görev zamanlama | İskelet (zamanlayıcı + plugin yaşam döngüsü) |
+| `crates/` | Rust | Ortak çekirdek: SSRF denetimi, `content_hash` + denetim zinciri, regex varlık çıkarma — Python servisleri `osiris_native` (PyO3) üzerinden kullanır | ✅ R4 (Rust geçişi sürüyor — [plan](docs/RUST_GECIS_PLANI.md)) |
 | `osiris-collector` | Python | Toplama plugin'lerini yönetir | ✅ Çalışıyor |
 | `osiris-pipeline` | Python | Temizleme, NER, sınıflandırma, embedding, depolama | ✅ Çalışıyor (embedding opsiyonel) |
 | `osiris-query` | Python | Tam metin + semantik arama | ✅ Çalışıyor |
@@ -66,7 +66,7 @@ Katmanlar, veri akışı ve güvenlik modeli için bkz. [docs/ARCHITECTURE.tr.md
 
 ## Teknoloji Stack'i
 
-- **Diller:** C++20, Python 3.11+, TypeScript
+- **Diller:** Python 3.11+, Rust (kararlı, `rust-toolchain.toml` ile sabit), TypeScript
 - **Veritabanı:** PostgreSQL 16 (+ pgvector, TimescaleDB opsiyonel), Redis
 - **Arayüz:** CLI, REST API, React + Tailwind Web UI
 - **Otomasyon:** N8N, APScheduler

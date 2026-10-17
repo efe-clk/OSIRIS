@@ -95,13 +95,13 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 │                                                                 │
 │  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   │
 │  │   CLI    │   │ Web UI   │   │   Core   │   │  REST    │   │
-│  │          │   │(React/TS)│   │  (C++)   │   │  API     │   │
+│  │          │   │(React/TS)│   │  (Rust)  │   │  API     │   │
 │  └────┬─────┘   └────┬─────┘   └────┬─────┘   └────┬─────┘   │
 │       └──────────────┴──────────────┴──────────────┘          │
 │                              │                                  │
 │                    ┌─────────▼─────────┐                       │
 │                    │   API Gateway /   │                        │
-│                    │   Core Engine     │  (C++ + Python)        │
+│                    │   Core Engine     │  (Python + Rust)       │
 │                    └─────────┬─────────┘                       │
 │              ┌───────────────┼───────────────┐                 │
 │              │               │               │                  │
@@ -130,7 +130,7 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 |-------|------|-----------|
 | **Interface** | User interaction | CLI (Click), Web UI (React), REST (FastAPI) |
 | **API Gateway** | Connects all components, auth + validation | Python/FastAPI (scheduling: APScheduler, Python — `osiris-collector`) |
-| **Core Engine** | Task management, plugin lifecycle | C++20 |
+| **Rust Core** | SSRF guard, content_hash/audit, regex extraction (shared by all services) | Rust (`crates/`, PyO3 bridge `osiris_native`) |
 | **Collector Manager** | Plugin orchestration, queue delivery | Python |
 | **Processing Pipeline** | Clean, enrich, deduplicate, store | Python |
 | **Storage Layer** | Persistent storage | PostgreSQL + Redis |
@@ -146,7 +146,7 @@ The system runs 24/7 on a VDS. All components are user-controlled; nothing leaks
 
 | Language | Area | Rationale |
 |----------|------|-----------|
-| **C++** (C++20) | Core Engine | Memory efficiency, scheduling |
+| **Rust** (stable) | Core crates (`crates/`) | Memory safety, one implementation of the cross-language contract, migration target |
 | **Python 3.11+** | Plugins, pipeline, API, analysis | Ecosystem, velocity |
 | **TypeScript** | Web UI | Type-safe frontend |
 | **SQL** | Queries, migrations | — |
@@ -193,11 +193,12 @@ Docker, Docker Compose (profiles: default infra, `api`, `ui`, `full`), Nginx rev
 
 ## 5. Modules and Components
 
-### 5.1 Core Engine (`osiris-core`)
-- **Language:** C++20, `-Wall -Wextra -Wpedantic`, zero warnings
-- **Role:** central coordinator
-- **Implemented:** plugin register/start/stop, task list, 1-second scheduler loop with atomic stop flag (`stop_scheduler`), versioned CLI
-- **Deferred:** full cron parsing, IPC server (REST lives in `osiris-api`)
+### 5.1 Rust Core (`crates/`)
+- **Language:** Rust (stable, pinned in `rust-toolchain.toml`); CI runs `cargo fmt --check`, `clippy -D warnings`, `cargo test`, `cargo deny`
+- **Role:** security- and contract-critical pure functions shared by every service: SSRF guard (`osiris-security`), `content_hash` normalization + RFC 8785 + audit chain (`osiris-hash`), regex entity extraction (`osiris-extract`)
+- **Python bridge:** `osiris_native` (PyO3, `crates/osiris-py`), selected with `OSIRIS_NATIVE=rust|python` (default `rust`; a missing module is a startup error, never a silent fallback)
+- **Contract:** identical output to the Python reference on every `fixtures/` case, see [SOZLESME.md](SOZLESME.md)
+- The former C++ `osiris-core` skeleton was removed in R4 (decision K1); scheduling stays in `osiris-collector` (APScheduler)
 
 ### 5.2 Collector Manager (`osiris-collector`)
 - Plugin loading with manifest validation (bad manifests logged, skipped)
@@ -294,7 +295,7 @@ sources (
 [Collector Plugin]  (validated config, timeouts, size caps)
     │  raw items
     ▼
-[Redis osiris:raw_items]
+[Redis Stream osiris:stream:raw_items]
     │
     ▼
 [Processing Pipeline]
@@ -346,7 +347,7 @@ TimescaleDB absence is non-fatal (NOTICE + fallback), verified on stock `pgvecto
 ### 10.4 Audit & Logging
 - Hash-chained `audit_logs` with concurrent-writer lock and `verify_chain` checker
 - API collect/search/key operations logged best-effort (never break requests)
-- Python logging without secret interpolation; C++ mutex-guarded logger
+- Python logging without secret interpolation
 
 ---
 
@@ -502,7 +503,8 @@ Alert handlers (email/Telegram/webhook) plug into `AlertManager.register_handler
 |------|---------|------|
 | Python unit + coverage | `pytest -q` | `--cov-fail-under=80` |
 | Lint | `ruff check .` | zero findings |
-| C++ build | `cmake --build` | `-Wall -Wextra -Wpedantic`, zero warnings |
+| Rust | `cargo fmt --check` · `cargo clippy --all-targets -- -D warnings` · `cargo test` · `cargo deny check` | zero warnings |
+| Rust ↔ Python parity | `pytest tests/golden/test_native_parity.py` (+ `OSIRIS_NATIVE=python pytest`) | identical output |
 | Compose validity | `docker compose config` | exit 0 |
 | DB migration | `psql -v ON_ERROR_STOP=1 -f db/migrations/*.sql` | clean on stock `pgvector:pg16` |
 | Live API smoke | TestClient + curl via Nginx | auth matrix (401/403/200) |

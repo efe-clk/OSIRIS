@@ -13,8 +13,8 @@ This document summarizes the high-level architecture of the OSIRIS platform and 
 └──────────────────────────┬─────────────────────────────────┘
                             │
 ┌──────────────────────────▼─────────────────────────────────┐
-│ Core Layer (osiris-core, C++)                              │
-│  Coordination · Scheduling · Plugin lifecycle              │
+│ Core Layer (crates/, Rust — via osiris_native/PyO3)        │
+│  SSRF guard · content_hash + audit chain · regex extract   │
 └──────────────────────────┬─────────────────────────────────┘
                             │
 ┌──────────────────────────▼─────────────────────────────────┐
@@ -31,7 +31,7 @@ This document summarizes the high-level architecture of the OSIRIS platform and 
 ## Data Flow
 
 1. **Collect** — Collector Manager runs scheduled plugins (full 5-field cron).
-2. **Queue** — raw data goes to the Redis queue (`osiris:raw_items`, 512 KB item cap).
+2. **Queue** — raw data goes to the Redis Stream `osiris:stream:raw_items` (consumer group, at-least-once, 512 KB item cap).
 3. **Process** — pipeline cleans, detects language, extracts entities, classifies, embeds (optional model), deduplicates by content hash.
 4. **Store** — processed data is written to PostgreSQL (`items`, `entities`, `item_entities`, optional `embedding` vector).
 5. **Analyze** — Query/Graph/Alert/Report layers consume the data; graph edges persist in `graph_edges`.
@@ -41,7 +41,7 @@ This document summarizes the high-level architecture of the OSIRIS platform and 
 
 | Module | Responsibility | Notes |
 |--------|---------------|-------|
-| `osiris-core` | Central coordinator, plugin lifecycle, scheduling | Atomic stop flag; REST runs in `osiris-api` |
+| `crates/` (Rust) | SSRF guard, `content_hash`/audit chain, regex extraction | Used by every Python service via `osiris_native` (`OSIRIS_NATIVE`); scheduling is in `osiris-collector` |
 | `osiris-collector` | Plugin loading, task execution, queue delivery | Crash isolation, full cron, source health tracking |
 | `osiris-pipeline` | Cleaning, NER, classification, embedding, storage | Regex + ONNX NER (mBERT-hrl), keyword topics, fastembed embeddings (384-d); Redis Streams consumer |
 | `osiris-query` | Full-text + semantic + entity search | `dict_row`, validated limits, LIKE-escape |

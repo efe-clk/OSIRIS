@@ -7,11 +7,6 @@ dist/
 *.dylib
 *.exe
 *.out
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-Makefile
-compile_commands.json
 
 # Python
 __pycache__/
