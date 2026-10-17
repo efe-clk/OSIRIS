@@ -45,7 +45,10 @@ fn security_fixtures() {
         let got = match case["fn"].as_str().unwrap() {
             "assert_safe_url" => outcome(denied(osiris_security::assert_safe_url(
                 &s("url"),
-                args["allow_onion"].as_bool().unwrap(),
+                osiris_security::UrlPolicy {
+                    allow_onion: args["allow_onion"].as_bool().unwrap(),
+                    allow_i2p: args["allow_i2p"].as_bool().unwrap_or(false),
+                },
                 &resolver,
             ))),
             "resolve_safe_ips" => {

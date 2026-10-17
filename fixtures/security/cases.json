@@ -436,6 +436,53 @@
       }
     },
     {
+      "name": "i2p_i2p_plugin_disi",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://forum.i2p/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": ".i2p adresleri yalnızca I2P plugin'i ile kullanılabilir"
+      }
+    },
+    {
+      "name": "i2p_i2p_plugin",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://forum.i2p/",
+        "allow_onion": false,
+        "allow_i2p": true
+      },
+      "expected": {
+        "ok": "http://forum.i2p/"
+      }
+    },
+    {
+      "name": "i2p_izni_onion_acmaz",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://abc.onion/",
+        "allow_onion": false,
+        "allow_i2p": true
+      },
+      "expected": {
+        "error": ".onion adresleri yalnızca Tor plugin'i ile kullanılabilir"
+      }
+    },
+    {
+      "name": "i2p_izni_ic_ag_acmaz",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://10.0.0.5/",
+        "allow_onion": false,
+        "allow_i2p": true
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: 10.0.0.5"
+      }
+    },
+    {
       "name": "port_aralik_disi",
       "fn": "assert_safe_url",
       "args": {

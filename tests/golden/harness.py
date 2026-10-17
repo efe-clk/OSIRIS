@@ -254,7 +254,8 @@ def run_security(case: dict) -> dict:
     with mock.patch.object(sec, "_host_ips", lambda h: list(dns.get(h, []))):
         try:
             if case["fn"] == "assert_safe_url":
-                return {"ok": fn(args["url"], allow_onion=args["allow_onion"])}
+                return {"ok": fn(args["url"], allow_onion=args["allow_onion"],
+                                 allow_i2p=args.get("allow_i2p", False))}
             if case["fn"] == "resolve_safe_ips":
                 return {"ok": fn(args["host"])}
             value = args.pop("value")

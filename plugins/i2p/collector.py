@@ -40,7 +40,7 @@ class I2PCollector(BaseCollector):
         except ValueError as exc:
             return CollectionResult(items=[], success=False, error=str(exc))
         try:
-            resp = fetch_url(session, "GET", url, timeout=60, verify=True,
+            resp = fetch_url(session, "GET", url, allow_i2p=True, timeout=60, verify=True,
                              max_bytes=_MAX_BYTES)
             resp.raise_for_status()
         except (requests.RequestException, ValueError) as exc:
@@ -62,7 +62,7 @@ class I2PCollector(BaseCollector):
         if not url or not isinstance(url, str):
             return False
         try:
-            return fetch_url(self._session(self.config), "HEAD", url, timeout=30,
+            return fetch_url(self._session(self.config), "HEAD", url, allow_i2p=True, timeout=30,
                              verify=True, max_bytes=0).status_code < 500
         except (requests.RequestException, ValueError):
             return False

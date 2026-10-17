@@ -128,10 +128,19 @@ fn has_ambiguous_chars(url: &str) -> bool {
     url.chars().any(|c| c == '\\' || c < ' ' || c == '\u{7f}')
 }
 
+/// Karanlık ağ alan adları için izinler: proxy çözer, DNS denetimi yapılmaz.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UrlPolicy {
+    /// `.onion` (yalnızca Tor plugin'i)
+    pub allow_onion: bool,
+    /// `.i2p` (yalnızca I2P plugin'i — E15)
+    pub allow_i2p: bool,
+}
+
 /// `assert_safe_url`: geçerliyse özgün URL'yi döner.
 pub fn assert_safe_url<R: Resolver>(
     url: &str,
-    allow_onion: bool,
+    policy: UrlPolicy,
     resolver: &R,
 ) -> Result<String, CheckError<R::Error>> {
     if url.is_empty() || url.chars().count() > MAX_URL_CHARS {
@@ -154,8 +163,14 @@ pub fn assert_safe_url<R: Resolver>(
         return Err(err("URL host içermiyor").into());
     }
     if host.ends_with(".onion") {
-        if !allow_onion {
+        if !policy.allow_onion {
             return Err(err(".onion adresleri yalnızca Tor plugin'i ile kullanılabilir").into());
+        }
+        return Ok(url.to_owned());
+    }
+    if host.ends_with(".i2p") {
+        if !policy.allow_i2p {
+            return Err(err(".i2p adresleri yalnızca I2P plugin'i ile kullanılabilir").into());
         }
         return Ok(url.to_owned());
     }

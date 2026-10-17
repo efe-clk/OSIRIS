@@ -126,10 +126,11 @@ def _ambiguous_url_chars(url: str) -> bool:
     return any(c == "\\" or c < " " or c == "\x7f" for c in url)
 
 
-def _py_assert_safe_url(url: str, *, allow_onion: bool = False) -> str:
+def _py_assert_safe_url(url: str, *, allow_onion: bool = False, allow_i2p: bool = False) -> str:
     """URL'yi SSRF'e karşı doğrular. Geçersizse ValueError yükseltir.
 
     - http/https zorunlu (onion için allow_onion ile .onion host'una izin)
+    - .i2p yalnızca allow_i2p ile (I2P proxy'si çözer; DNS'e gidilmez — E15)
     - kullanıcı bilgisi (user:pass@) yasak
     - ters eğik çizgi / kontrol karakteri yasak (ayrıştırıcı farkı, E14)
     - özel/iç IP ve localhost yasak
@@ -149,6 +150,10 @@ def _py_assert_safe_url(url: str, *, allow_onion: bool = False) -> str:
     if host.endswith(".onion"):
         if not allow_onion:
             raise ValueError(".onion adresleri yalnızca Tor plugin'i ile kullanılabilir")
+        return url
+    if host.endswith(".i2p"):
+        if not allow_i2p:
+            raise ValueError(".i2p adresleri yalnızca I2P plugin'i ile kullanılabilir")
         return url
     if parsed.port is not None and not (1 <= parsed.port <= _MAX_PORT):
         raise ValueError("Geçersiz port")
@@ -255,11 +260,11 @@ def resolve_safe_ips(host: str) -> list[str]:
     return _rust.resolve_safe_ips(host, _resolver)
 
 
-def assert_safe_url(url: str, *, allow_onion: bool = False) -> str:
+def assert_safe_url(url: str, *, allow_onion: bool = False, allow_i2p: bool = False) -> str:
     """URL'yi SSRF'e karşı doğrular (bkz. `_py_assert_safe_url`). Geçersizse ValueError."""
     if _rust is None:
-        return _py_assert_safe_url(url, allow_onion=allow_onion)
-    return _rust.assert_safe_url(url, allow_onion, _resolver)
+        return _py_assert_safe_url(url, allow_onion=allow_onion, allow_i2p=allow_i2p)
+    return _rust.assert_safe_url(url, allow_onion, allow_i2p, _resolver)
 
 
 def sanitize_irc_token(value: str, max_len: int = 64) -> str:
@@ -298,7 +303,7 @@ _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 def fetch_url(session, method: str, url: str, *, allow_onion: bool = False,
-              timeout: int = 30, max_redirects: int = 3,
+              allow_i2p: bool = False, timeout: int = 30, max_redirects: int = 3,
               max_bytes: int = 2_000_000, **kwargs):
     """Yönlendirme-denetimli HTTP istemi (redirect-SSRF korumalı).
 
@@ -312,7 +317,7 @@ def fetch_url(session, method: str, url: str, *, allow_onion: bool = False,
 
     if max_redirects < 0 or max_redirects > 10:
         raise ValueError("max_redirects 0-10 aralığında olmalı")
-    current = assert_safe_url(url, allow_onion=allow_onion)
+    current = assert_safe_url(url, allow_onion=allow_onion, allow_i2p=allow_i2p)
     hops = 0
     while True:
         resp = session.request(method, current, allow_redirects=False,
@@ -322,7 +327,7 @@ def fetch_url(session, method: str, url: str, *, allow_onion: bool = False,
             hops += 1
             resp.close()
             nxt = urljoin(current, location.strip())
-            current = assert_safe_url(nxt, allow_onion=allow_onion)
+            current = assert_safe_url(nxt, allow_onion=allow_onion, allow_i2p=allow_i2p)
             # Tarayıcı kuralı: 303 her zaman GET'e döner; 301/302 POST'u GET yapar
             if resp.status_code == 303 or (
                 resp.status_code in (301, 302) and method.upper() == "POST"

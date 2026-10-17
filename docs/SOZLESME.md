@@ -120,9 +120,17 @@ atlanan tipler fixture'dadır. Bilinen sapma: STIX'in SCO için önerdiği names
   TEST-NET, multicast, `::1`, `fc00::/7`, `fe80::/10`, `0.0.0.0`, `::`); **IPv4-mapped IPv6 açılarak**
   denetlenir; DNS kayıtlarından **biri bile** engelliyse host reddedilir; çözülemeyen host reddedilir.
   Ham TCP yalnızca `safe_create_connection` ile (çöz → denetle → **doğrulanmış IP'ye** bağlan).
-- **Bilinen biçim borcu (R5 kararı):** `rest-api` ve `shodan` `raw_content` alanına Python `str(dict)`
-  (repr: `{'a': 1, 'b': None, 'c': True}`) yazar. Rust bunu ya birebir üretir ya da iki plugin JSON'a
-  geçer — ikincisi bu plugin'lerin yeni öğelerinin `content_hash`'ini değiştirir (bilinçli karar gerekir).
+- **JSON kayıtların `raw_content`'i (R5 kararı, 2026-10-17):** `rest-api` ve `shodan` kaydı
+  **kanonik JSON** yazar (`osiris.records.record_json`, Rust `osiris_hash::canonical::record_json`):
+  RFC 8785 anahtar sırası (UTF-16) ve dize/sayı biçimi; tamsayılar her büyüklükte **tam ondalık**
+  (JCS'nin ±2^53 sınırı uygulanmaz), `NaN`/`±Infinity` → `null`; kayıt bir dize ise olduğu gibi
+  (tırnaksız). Yanıt gövdesi Python `json.loads` semantiğiyle okunur (tekrarlanan anahtarda ilk konum
+  + son değer, `NaN`/`Infinity` kabul). Eşlenmemiş UTF-16 vekili (`\ud800`): Python dizede taşır
+  ve kuyruğa yazarken hata verir, Rust U+FFFD yazar (tek bilinen fark). Önceki biçim Python
+  `str(dict)` idi; **bu iki plugin'in geçişten sonraki öğelerinin `content_hash`'i değişti** (aynı
+  kayıt bir kez daha saklanabilir; saklama süresiyle temizlenir).
+- **`.i2p` (E15):** I2P plugin'i `allow_i2p` ile çağırır; `.i2p` host'u DNS'e sorulmaz (I2P
+  proxy'si çözer). Önceden DNS denetimi `.i2p` adlarını çözemediği için plugin hiç çalışamıyordu.
 
 ## 5. Kuyruk (Redis Streams, R3)
 
@@ -251,7 +259,7 @@ Kaynak: `osiris-sdk/osiris/security.py`, Rust: `crates/osiris-security`. Fixture
   bitirir, `urlparse` bitirmez — `http://127.0.0.1\x.saldirgan.example/` denetimde saldırganın
   alan adı, bağlantıda 127.0.0.1 idi). Bölme CPython 3.11.16 `urlsplit` ile birebir (WHATWG değil).
 - Şema yalnızca `http`/`https`; kullanıcı bilgisi (boş olmayan kullanıcı ya da parola) yasak;
-  `.onion` yalnızca `allow_onion` ile (DNS'e gidilmez); port 1–65535.
+  `.onion` yalnızca `allow_onion`, `.i2p` yalnızca `allow_i2p` ile (DNS'e gidilmez, E15); port 1–65535.
 - Host: kırp → küçük harf → sondaki noktalar atılır; `localhost` red; IP literali Python
   `ipaddress` kurallarıyla (baştaki sıfırlı IPv4 literal değildir → DNS'e gider), değilse DNS.
   Kayıt yoksa red; **herhangi bir** kayıt engelli bloktaysa red (fail-closed). IPv4-mapped IPv6
