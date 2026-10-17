@@ -1,6 +1,23 @@
 # OSIRIS pipeline işçisi — Redis Streams tüketicisi + KVKK saklama temizliği
 # Kullanım: python models/download.py && docker compose --profile worker up -d --build
 # Modeller imaja GÖMÜLMEZ: ./models salt-okunur bağlanır (yoksa yalnızca regex, vektörsüz).
+# --- Rust çekirdeği (osiris_native, PyO3) — tekerlek derleme aşaması (R4)
+# Debian sürümü çalışma imajıyla aynı ya da daha eski olmalı (glibc uyumu).
+FROM rust:1.99.1-slim-trixie AS native
+# rust-toolchain.toml'daki bileşenleri (rustfmt/clippy) indirmesin: imajdaki sürüm aynı
+ENV RUSTUP_TOOLCHAIN=1.99.1 \
+    CARGO_TERM_COLOR=never
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-venv \
+ && rm -rf /var/lib/apt/lists/* \
+ && python3 -m venv /opt/maturin \
+ && /opt/maturin/bin/pip install --no-cache-dir maturin==1.15.0
+WORKDIR /src
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+RUN /opt/maturin/bin/maturin build --release --locked \
+      -m crates/osiris-py/Cargo.toml --interpreter python3 --out /wheels
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -13,8 +30,9 @@ WORKDIR /app
 
 COPY osiris-sdk ./osiris-sdk
 COPY osiris-pipeline ./osiris-pipeline
+COPY --from=native /wheels /wheels
 
-RUN pip install --no-cache-dir ./osiris-sdk "./osiris-pipeline[embedding,ner]" \
+RUN pip install --no-cache-dir /wheels/*.whl ./osiris-sdk "./osiris-pipeline[embedding,ner]" \
  && mkdir -p /app/models
 
 USER nobody

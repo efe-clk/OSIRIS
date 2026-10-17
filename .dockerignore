@@ -23,3 +23,7 @@ reports/
 .DS_Store
 .idea/
 .vscode/
+# Rust derleme çıktısı ve ONNX modelleri (worker'a salt-okunur bağlanır, imaja girmez)
+target/
+**/target/
+models/
