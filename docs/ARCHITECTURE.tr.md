@@ -1,64 +1,61 @@
-> **English:** For the English version of this document, see [here](ARCHITECTURE.md).
+> **English:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the English version of this document.
 
-# OSIRIS Mimari Dokümanı
+# OSIRIS Mimarisi
 
-Bu doküman, OSIRIS platformunun yüksek seviyeli mimarisini ve modül sorumluluklarını özetler. Tam teknik şartname için bkz. [TEKNIK_DOKUMAN.tr.md](TEKNIK_DOKUMAN.tr.md).
+Bu belge OSIRIS 1.0'ın (Rust) mimarisini ve her crate'in sorumluluğunu özetler. Kurulum ve işletim: [TEKNIK_DOKUMAN.tr.md](TEKNIK_DOKUMAN.tr.md). Davranış sözleşmeleri (hash, denetim, kuyruk, API, …): [SOZLESME.md](SOZLESME.md).
 
-## Katmanlar
+## Süreçler
 
-```
-┌────────────────────────────────────────────────────────────┐
-│ Arayüz Katmanı                                             │
-│  CLI · Web UI · REST API · (Qt masaüstü planlı)            │
-└──────────────────────────┬─────────────────────────────────┘
-                            │
-┌──────────────────────────▼─────────────────────────────────┐
-│ Çekirdek Katmanı (crates/, Rust — osiris_native/PyO3)      │
-│  SSRF denetimi · content_hash + denetim zinciri · regex    │
-└──────────────────────────┬─────────────────────────────────┘
-                            │
-┌──────────────────────────▼─────────────────────────────────┐
-│ Veri Katmanı                                               │
-│  Collector Manager → Plugin'ler → Pipeline → Depolama      │
-└──────────────────────────┬─────────────────────────────────┘
-                            │
-┌──────────────────────────▼─────────────────────────────────┐
-│ Analiz Katmanı                                             │
-│  Query · Graph (kalıcı) · Alert (+anomali) · Report        │
-└────────────────────────────────────────────────────────────┘
-```
+Tek ikili (`osiris-server`), tek distroless imajda (`osiris:1.0.0-rc`). Compose onu farklı alt komutlarla üç kez çalıştırır:
+
+| Servis | Komut | Görev |
+|--------|-------|-------|
+| `osiris-api` | `api` | REST API (axum), kimlik/RBAC, kota, OpenAPI, ayrı iç portta `/metrics` |
+| `osiris-pipeline` | `pipeline --loop` | Redis Stream'i tüketir, öğeleri işler ve depolar, periyodik saklama temizliği |
+| `osiris-collector` | `collector` | Kaynakları cron zamanlamasıyla çalıştırır (`OSIRIS_SCHEDULER=on` olmadıkça kapalı) |
+
+Tek seferlik alt komutlar: `migrate` (gömülü, tekrar çalıştırılabilir SQL migration'ları), `models` (ONNX modellerini indir + doğrula), `audit-verify` (denetim zincirini doğrula), `purge` (saklama temizliği şimdi), `collect` (tek çalıştırma), `health` (konteyner sağlık denetimi). `osiris` CLI (`status`, `plugins`, `collect`) aynı imajdadır.
 
 ## Veri Akışı
 
-1. **Toplama** — Collector Manager zamanlanmış plugin'leri çalıştırır (tam 5 alanlı cron).
-2. **Kuyruk** — ham veri Redis Stream'e yazılır (`osiris:stream:raw_items`, consumer group, en az bir kez, öğe başına 512 KB sınır).
-3. **İşleme** — pipeline temizler, dil tespiti yapar, varlık çıkarır, sınıflandırır, embedding üretir (opsiyonel model), içerik hash'iyle tekilleştirir.
-4. **Depolama** — işlenmiş veri PostgreSQL'e yazılır (`items`, `entities`, `item_entities`, opsiyonel `embedding` vektörü).
-5. **Analiz** — Query/Graph/Alert/Report katmanları veriyi tüketir; graf kenarları `graph_edges`'te kalıcıdır.
-6. **Sunum** — arayüzler sonuçları REST API (JWT + RBAC) üzerinden gösterir.
+1. **Toplama** — collector (zamanlanmış) ya da API (`/collect`, `/sources/{id}/collect`) bir plugin çalıştırır. Plugin'ler kendileri soket açmaz: HTTP, DNS ve TCP host'un denetimli yeteneklerinden geçer (her adımda SSRF denetimi, yönlendirme/boyut/süre sınırları, Tor/I2P yalnızca operatörün proxy'leriyle). Kaynak sağlığı `sources` / `source_metrics`'e yazılır.
+2. **Kuyruk** — toplanan her öğe Redis Stream `osiris:stream:raw_items`'e JSON mesaj olarak yazılır (`XADD MAXLEN ~`, ≤ 512 KB). Teslim en az bir kez: tüketici grubu `osiris-pipeline`, 5 dk boşta kalan mesaj `XAUTOCLAIM` ile geri alınır, 5 teslimden sonra ya da bozuk mesajda ölü-mektup akışı.
+3. **İşleme** — temizleme (`content_hash` normalizasyonu), dil tespiti (lingua), varlık çıkarma (regex + ONNX NER, mBERT-hrl), konu sınıflandırma, vektör (fastembed, 384 boyut, L2-normalize).
+4. **Depolama** — tek işlem: `items` (`content_hash` ile tekilleştirilir), `entities`, `item_entities`; vektörler `items.embedding_v2`.
+5. **Analiz** — tam metin / semantik / varlık araması, varlık grafı (`graph_edges`), kayıtlı sorgu uyarıları, raporlar.
+6. **Sunum** — Web UI ve n8n REST API'yi Nginx üzerinden çağırır (`/api/*`).
 
-## Modül Sorumlulukları
+## Crate'ler
 
-| Modül | Sorumluluk | Notlar |
-|-------|-----------|--------|
-| `crates/` (Rust) | SSRF denetimi, `content_hash`/denetim zinciri, regex çıkarma | Tüm Python servisleri `osiris_native` üzerinden kullanır (`OSIRIS_NATIVE`); zamanlama `osiris-collector`'da |
-| `osiris-collector` | Plugin yükleme, görev çalıştırma, kuyruğa iletme | Crash izolasyonu, tam cron, kaynak sağlık takibi |
-| `osiris-server` (Rust, R5) | Kuyruk işçisi (`pipeline`), zamanlayıcı (`collector`), 11 plugin, gölge karşılaştırma | Compose'da varsayılan işçi (`worker` profili); Python işçisi `worker-python` yedeği; zamanlama `OSIRIS_SCHEDULER=on` olmadan kapalı; WASM plugin'ler: [tasarım notu](WASM_PLUGIN_TASARIMI.md) |
-| `osiris-pipeline` | Temizleme, NER, sınıflandırma, embedding, depolama | Regex + ONNX NER (mBERT-hrl), anahtar kelime konuları, fastembed embedding (384 boyut); Redis Streams tüketicisi |
-| `osiris-query` | Tam metin + semantik + varlık araması | `dict_row`, doğrulanmış limitler, LIKE kaçışı |
-| `osiris-graph` | Varlık grafı, merkezilik, kümeleme | Bellek-içi + `graph_edges` kalıcılığı |
-| `osiris-alert` | Kayıtlı sorgu eşleşme, anomali tespiti | Alt metin eşleşme, sessize alma, z-skor tabanları |
-| `osiris-report` | Markdown/HTML/JSON/CSV/STIX 2.1 raporları | Jinja autoescape, CSV-enjeksiyon koruması, dizin kilidi |
-| `osiris-api` | REST API sunucusu | CORS, giriş doğrulama, API anahtarı + JWT + RBAC, denetim kancaları |
-| `osiris-cli` | Komut satırı arayüzü | `status`, `plugins`, `collect`; temiz çıkış kodları |
-| `osiris-web-ui` | Tarayıcı arayüzü | Dashboard / Kaynaklar / Arama (temel) |
-| `osiris-sdk` | `plugin`, `models`, `security` (SSRF korumaları), `audit` (hash zinciri) | Tüm Python modüllerince paylaşılır |
+| Crate | Sorumluluk |
+|-------|-----------|
+| `osiris-server` | İkili + `api` modülü (rotalar, kimlik, girdi doğrulama, ölçümler, OpenAPI) |
+| `osiris-cli` | `osiris` CLI |
+| `osiris-collector` | Toplama çalıştırma, kaynaktan görev yapılandırması, kuyruğa yazma, sağlık kaydı, cron zamanlayıcı |
+| `osiris-queue` | Kuyruk üreticisi (`XADD`) — collector, API ve CLI'ın ML çalışma zamanını bağlamadan kullanması için |
+| `osiris-pipeline` | Akış tüketicisi, işleme adımları, NER (`ort`), embedding (`fastembed`), model indirici |
+| `osiris-plugin` | `Collector` trait'i, host yetenekleri (denetimli HTTP/DNS/TCP, proxy'ler), fixture oynatıcı |
+| `osiris-plugins` | 11 plugin: rss, web-scraper, dns-whois, rest-api, shodan, blockchain, username-search, tor, i2p, matrix, irc |
+| `osiris-feed` | RSS/Atom ayrıştırma ve temizleme (feedparser uyumlu) |
+| `osiris-db` | PostgreSQL erişimi (sqlx), gömülü migration'lar, denetim yazma/doğrulama, saklama, graf kenarları |
+| `osiris-query` | Tam metin (tsvector), semantik (pgvector kosinüs), varlık araması |
+| `osiris-graph` | Yönsüz varlık grafı, derece merkeziliği, Clauset–Newman–Moore toplulukları, GraphML/GEXF |
+| `osiris-alert` | Kayıtlı sorgu eşleşmesi, sessize alma, z-skor anomali, Redis yayını, webhook / Telegram / e-posta |
+| `osiris-report` | Markdown/HTML (kaçışlı), JSON, CSV (formül koruması, dizin kilidi), STIX 2.1 |
+| `osiris-hash` | `content_hash` temizleme, HTML metin çıkarma, kanonik JSON (RFC 8785), denetim zinciri özeti |
+| `osiris-extract` | Regex varlık çıkarma (e-posta, IP, alan adı, telefon, kripto adres, CVE) |
+| `osiris-security` | SSRF denetimi (URL politikası, DNS denetimi, IPv4-mapped IPv6) ve girdi temizleyiciler |
+| `osiris-types` | Ortak türler: manifest, toplanan öğe, toplama sonucu, kuyruk mesajı (JSON Şemaları `schemas/`) |
+
+Plugin manifest'leri (`plugins/*/manifest.json`) ve username-search site veritabanları derleme zamanında gömülür. WASM plugin arayüzü yalnızca tasarım notudur: [WASM_PLUGIN_TASARIMI.md](WASM_PLUGIN_TASARIMI.md).
 
 ## Güvenlik Modeli
 
-- **Çıkış kontrolü:** her plugin URL/host'u doğrulanır (`osiris.security`); özel/loopback/link-local/metadata IP'leri, URL içi kimlik bilgileri ve http(s) dışı şemalar reddedilir (fail-closed, çözülemeyen host dahil). Tor/I2P proxy'leri yalnızca localhost olabilir.
-- **Kimlik doğrulama:** operatör `X-API-Key`, kullanıcı bazlı DB anahtarları (yalnızca SHA-256 özeti saklanır), kısa ömürlü HS256 JWT'ler (yalnızca stdlib, sabit `alg`, sabit-süreli doğrulama).
-- **Yetkilendirme:** `viewer` → `analyst` → `admin` rolleri; bilinmeyen rol reddedilir.
-- **Denetim:** eklemeli hash-zincirli `audit_logs` (`prev_hash` + kilitli yazıcılar, `verify_chain` denetleyici); API toplama/arama/anahtar işlemleri best-effort loglanır.
-- **Taşıma:** Nginx `:8443`'te TLS sonlandırır (TLS 1.2/1.3, HSTS, CSP, hız sınırları); `:80` LAN/kurulum için durur.
-- **Sırlar:** `.env` (git-dışı, mod 600); DB parolaları döndürülebilir; hiçbir sır loglanmaz veya API ile döndürülmez.
+- **Çıkış denetimi:** her plugin URL'si/host'u doğrulanır (`osiris-security`); özel/loopback/link-local/metadata adresleri, URL'de kimlik bilgisi, ters eğik çizgi/kontrol karakteri ve http(s) dışı şemalar reddedilir — çözülemeyen host dahil fail-closed. Bağlantı, denetlenen IP'ye kurulur. `.onion` / `.i2p` yalnızca yapılandırılmış proxy'lerle.
+- **Kimlik doğrulama:** operatör `X-API-Key` (sabit süreli karşılaştırma), kullanıcı başına API anahtarları (yalnızca SHA-256 özeti saklanır), kısa ömürlü HS256 JWT (`alg` sabit, ayrı sır, API anahtarına düşme yok). Anahtar yoksa API başlamaz (`OSIRIS_INSECURE_OPEN=1` hariç).
+- **Yetkilendirme:** roller `viewer` → `analyst` → `admin`; bilinmeyen rol reddedilir.
+- **Kötüye kullanım sınırları:** kimlik başına kota (`OSIRIS_API_RATE_PER_MIN`), 5 MiB gövde tavanı, alan uzunluk sınırları, config ≤ 50 anahtar / 20 KB, ayrıca Nginx IP sınırı.
+- **Denetim:** append-only, hash zincirli `audit_logs` (RFC 8785 yükü, danışma kilitli yazıcılar); `osiris-server audit-verify` zinciri doğrular. KVKK kapsamında silinen kişisel veri günlüğe yalnızca SHA-256 özeti olarak yazılır.
+- **Hatalar:** yanıt gövdesi her zaman `{"detail": …}`, iç ayrıntı (SQL, sürücü iletisi, yığın izi) içermez.
+- **Taşıma:** Nginx TLS'i `:8443`'te sonlandırır (TLS 1.2/1.3, HSTS, CSP); `:80` LAN/kurulum için. Ölçümler yalnızca iç portta.
+- **Çalışma zamanı:** distroless imaj, root olmayan kullanıcı, kabuk yok; modeller ve sırlar imaja gömülmez.

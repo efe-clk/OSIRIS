@@ -2,63 +2,60 @@
 
 # OSIRIS Architecture
 
-This document summarizes the high-level architecture of the OSIRIS platform and module responsibilities. For the full technical specification, see [TECHNICAL_DOCUMENT.md](TECHNICAL_DOCUMENT.md).
+This document summarizes the architecture of OSIRIS 1.0 (Rust) and the responsibility of each crate. Installation and operations: [TECHNICAL_DOCUMENT.md](TECHNICAL_DOCUMENT.md). Behaviour contracts (hash, audit, queue, API, …): [SOZLESME.md](SOZLESME.md).
 
-## Layers
+## Processes
 
-```
-┌────────────────────────────────────────────────────────────┐
-│ Interface Layer                                            │
-│  CLI · Web UI · REST API · (Qt desktop planned)            │
-└──────────────────────────┬─────────────────────────────────┘
-                            │
-┌──────────────────────────▼─────────────────────────────────┐
-│ Core Layer (crates/, Rust — via osiris_native/PyO3)        │
-│  SSRF guard · content_hash + audit chain · regex extract   │
-└──────────────────────────┬─────────────────────────────────┘
-                            │
-┌──────────────────────────▼─────────────────────────────────┐
-│ Data Layer                                                 │
-│  Collector Manager → Plugins → Pipeline → Storage          │
-└──────────────────────────┬─────────────────────────────────┘
-                            │
-┌──────────────────────────▼─────────────────────────────────┐
-│ Analysis Layer                                             │
-│  Query · Graph (persistent) · Alert (+anomaly) · Report    │
-└────────────────────────────────────────────────────────────┘
-```
+One binary, `osiris-server`, shipped in one distroless image (`osiris:1.0.0-rc`). Compose runs it three times with different subcommands:
+
+| Service | Command | Does |
+|---------|---------|------|
+| `osiris-api` | `api` | REST API (axum), auth/RBAC, quotas, OpenAPI, `/metrics` on a separate internal port |
+| `osiris-pipeline` | `pipeline --loop` | Consumes the Redis Stream, processes and stores items, periodic retention purge |
+| `osiris-collector` | `collector` | Runs sources on their cron schedule (off unless `OSIRIS_SCHEDULER=on`) |
+
+One-shot subcommands: `migrate` (embedded idempotent SQL migrations), `models` (download + verify ONNX models), `audit-verify` (check the audit hash chain), `purge` (retention now), `collect` (single run), `health` (container healthcheck). The `osiris` CLI (`status`, `plugins`, `collect`) is in the same image.
 
 ## Data Flow
 
-1. **Collect** — Collector Manager runs scheduled plugins (full 5-field cron).
-2. **Queue** — raw data goes to the Redis Stream `osiris:stream:raw_items` (consumer group, at-least-once, 512 KB item cap).
-3. **Process** — pipeline cleans, detects language, extracts entities, classifies, embeds (optional model), deduplicates by content hash.
-4. **Store** — processed data is written to PostgreSQL (`items`, `entities`, `item_entities`, optional `embedding` vector).
-5. **Analyze** — Query/Graph/Alert/Report layers consume the data; graph edges persist in `graph_edges`.
-6. **Present** — interfaces show results via the REST API (JWT + RBAC).
+1. **Collect** — the collector (scheduled) or the API (`/collect`, `/sources/{id}/collect`) runs a plugin. Plugins never open sockets themselves: HTTP, DNS and TCP go through the host's guarded capabilities (SSRF check on every hop, redirect/size/time limits, Tor/I2P only via the operator's proxies). Source health is written to `sources` / `source_metrics`.
+2. **Queue** — each collected item is a JSON message on the Redis Stream `osiris:stream:raw_items` (`XADD MAXLEN ~`, ≤ 512 KB). Delivery is at-least-once: consumer group `osiris-pipeline`, `XAUTOCLAIM` after 5 min idle, dead-letter stream after 5 deliveries or for malformed messages.
+3. **Process** — clean (`content_hash` normalisation), detect language (lingua), extract entities (regex + ONNX NER, mBERT-hrl), classify topics, embed (fastembed, 384-d, L2-normalised).
+4. **Store** — one transaction: `items` (deduplicated by `content_hash`), `entities`, `item_entities`; vectors in `items.embedding_v2`.
+5. **Analyse** — full-text / semantic / entity search, entity graph (`graph_edges`), saved-query alerts, reports.
+6. **Present** — Web UI and n8n call the REST API through Nginx (`/api/*`).
 
-## Module Responsibilities
+## Crates
 
-| Module | Responsibility | Notes |
-|--------|---------------|-------|
-| `crates/` (Rust) | SSRF guard, `content_hash`/audit chain, regex extraction | Used by every Python service via `osiris_native` (`OSIRIS_NATIVE`); scheduling is in `osiris-collector` |
-| `osiris-collector` | Plugin loading, task execution, queue delivery | Crash isolation, full cron, source health tracking |
-| `osiris-server` (Rust, R5) | Queue worker (`pipeline`), scheduler (`collector`), 11 plugins, shadow comparison | Default worker in compose (`worker` profile); Python worker kept as `worker-python` fallback; scheduling off unless `OSIRIS_SCHEDULER=on`; WASM plugins: [design note](WASM_PLUGIN_TASARIMI.md) |
-| `osiris-pipeline` | Cleaning, NER, classification, embedding, storage | Regex + ONNX NER (mBERT-hrl), keyword topics, fastembed embeddings (384-d); Redis Streams consumer |
-| `osiris-query` | Full-text + semantic + entity search | `dict_row`, validated limits, LIKE-escape |
-| `osiris-graph` | Entity graph, centrality, communities | In-memory + `graph_edges` persistence |
-| `osiris-alert` | Saved-query matching, anomaly detection | Substring match, mute rules, z-score baselines |
-| `osiris-report` | Markdown/HTML/JSON/CSV/STIX 2.1 reports | Jinja autoescape, CSV-injection guard, traversal lock |
-| `osiris-api` | REST API server | CORS, validation, API key + JWT + RBAC, audit hooks |
-| `osiris-cli` | Command-line interface | `status`, `plugins`, `collect` with clean exit codes |
-| `osiris-web-ui` | Browser interface | Dashboard / Sources / Search (basic) |
-| `osiris-sdk` | `plugin`, `models`, `security` (SSRF guards), `audit` (hash chain) | Shared by all Python modules |
+| Crate | Responsibility |
+|-------|----------------|
+| `osiris-server` | Binary + `api` module (routes, auth, input validation, metrics, OpenAPI) |
+| `osiris-cli` | `osiris` CLI |
+| `osiris-collector` | Collection runs, task config from sources, queue writes, health records, cron scheduler |
+| `osiris-queue` | Queue producer (`XADD`) — shared by collector, API and CLI without pulling in the ML runtime |
+| `osiris-pipeline` | Stream consumer, processing steps, NER (`ort`), embeddings (`fastembed`), model downloader |
+| `osiris-plugin` | `Collector` trait, host capabilities (guarded HTTP/DNS/TCP, proxies), fixture replay transport |
+| `osiris-plugins` | The 11 plugins: rss, web-scraper, dns-whois, rest-api, shodan, blockchain, username-search, tor, i2p, matrix, irc |
+| `osiris-feed` | RSS/Atom parsing and sanitising (feedparser-compatible) |
+| `osiris-db` | PostgreSQL access (sqlx), embedded migrations, audit append/verify, retention, graph edges |
+| `osiris-query` | Full-text (tsvector), semantic (pgvector cosine), entity search |
+| `osiris-graph` | Undirected entity graph, degree centrality, Clauset–Newman–Moore communities, GraphML/GEXF |
+| `osiris-alert` | Saved-query matching, mute, z-score anomalies, Redis publish, webhook / Telegram / e-mail handlers |
+| `osiris-report` | Markdown/HTML (escaped), JSON, CSV (formula guard, directory lock), STIX 2.1 |
+| `osiris-hash` | `content_hash` cleaning, HTML text extraction, canonical JSON (RFC 8785), audit chain hash |
+| `osiris-extract` | Regex entity extraction (email, IP, domain, phone, crypto address, CVE) |
+| `osiris-security` | SSRF guard (URL policy, DNS checks, IPv4-mapped IPv6) and input sanitizers |
+| `osiris-types` | Shared types: manifest, collected item, collection result, queue message (JSON Schemas in `schemas/`) |
+
+Plugin manifests (`plugins/*/manifest.json`) and the username-search site databases are embedded at compile time. A WASM plugin interface is a design note only: [WASM_PLUGIN_TASARIMI.md](WASM_PLUGIN_TASARIMI.md).
 
 ## Security Model
 
-- **Egress control:** every plugin URL/host is validated (`osiris.security`); private/loopback/link-local/metadata IPs, credentials in URLs, and non-http(s) schemes are rejected (fail-closed, incl. unresolvable hosts). Tor/I2P proxies are localhost-only.
-- **Authentication:** operator `X-API-Key`, per-user API keys (SHA-256 hashes only in DB), short-lived HS256 JWTs (stdlib-only, `alg` pinned, constant-time verify).
-- **Authorization:** roles `viewer` → `analyst` → `admin`; unknown roles denied.
-- **Audit:** append-only hash-chained `audit_logs` (`prev_hash` + advisory-locked writers, `verify_chain` checker); API collects/searches are logged best-effort.
-- **Transport:** Nginx terminates TLS on `:8443` (TLS 1.2/1.3, HSTS, CSP, rate limits); `:80` kept for LAN/bootstrap.
-- **Secrets:** `.env` (git-ignored, mode 600); DB passwords rotatable; no secret is ever logged or returned by APIs.
+- **Egress control:** every plugin URL/host is validated (`osiris-security`); private/loopback/link-local/metadata addresses, credentials in URLs, backslashes/control characters and non-http(s) schemes are rejected — fail-closed, including unresolvable hosts. The connection goes to the IP that was checked. `.onion` / `.i2p` only through the configured proxies.
+- **Authentication:** operator `X-API-Key` (constant-time compare), per-user API keys (only SHA-256 hashes stored), short-lived HS256 JWTs (`alg` pinned, separate secret, no API-key fallback). The API refuses to start without a key unless `OSIRIS_INSECURE_OPEN=1`.
+- **Authorization:** roles `viewer` → `analyst` → `admin`; unknown roles are denied.
+- **Abuse limits:** per-identity quota (`OSIRIS_API_RATE_PER_MIN`), body cap 5 MiB, field length caps, config ≤ 50 keys / 20 KB, plus Nginx per-IP rate limits.
+- **Audit:** append-only hash-chained `audit_logs` (RFC 8785 payload, advisory-locked writers); `osiris-server audit-verify` checks the chain. Personal data erased under KVKK is logged only as a SHA-256 digest.
+- **Errors:** response bodies are always `{"detail": …}` without internals (SQL, driver messages, stack traces).
+- **Transport:** Nginx terminates TLS on `:8443` (TLS 1.2/1.3, HSTS, CSP); `:80` kept for LAN/bootstrap. Metrics listen on an internal port only.
+- **Runtime:** distroless image, non-root user, no shell; models and secrets are never baked into the image.

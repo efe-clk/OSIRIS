@@ -24,8 +24,11 @@ Motor-tabanlı (arama motoru gerektiren) ve devre-dışı siteler elenir.
 DB'yi güncellemek için:
 
 ```bash
-python3 plugins/username-search/tools/build_full_db.py
+python3 plugins/username-search/tools/build_full_db.py   # geliştirme aracı (yalnızca stdlib)
 ```
+
+Site DB'leri derleme zamanında ikiliye gömülür: dosya değişince imajı yeniden derleyin
+(`docker compose --profile full build`).
 
 Özel/ham Maigret `data.json` da verilebilir (`sites_db` — sarmalayıcı,
 `presenseStrs` yazım hatası ve dize-liste alanları tolere edilir). Güvenlik

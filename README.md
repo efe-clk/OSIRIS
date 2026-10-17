@@ -4,131 +4,109 @@
 
 > **O**pen **S**ource **I**ntelligence **R**esearch & **I**nformation **S**ystem
 
-OSIRIS is an advanced open-source intelligence (OSINT) platform that collects data from multiple networks (surface web, darknets, P2P, encrypted networks), correlates it, and analyzes it — running fully self-hosted.
+OSIRIS is a self-hosted open-source intelligence (OSINT) platform: it collects data from multiple networks (surface web, Tor, I2P, IRC, Matrix, RSS, APIs, blockchains), extracts and correlates entities, and makes everything searchable — on your own server, with no third-party cloud dependency.
 
-The system is designed to run 24/7 on a VDS (Virtual Dedicated Server). All components are under user control; no data leaks out, no third-party cloud dependencies.
+Version **1.0.0-rc**. The application is written in **Rust** (single binary, single Docker image); the browser interface is React/TypeScript.
 
 ## Core Principles
 
-- **Privacy first** — all connections can go through proxy/VPN/Tor
-- **Modularity** — every data source is an independent plugin; added/removed without stopping the system
-- **Extensibility** — new network types, protocols, and analysis methods integrate easily
-- **Transparency** — open source, every operation logged, auditable
+- **Privacy first** — darknet traffic goes only through the operator's Tor/I2P proxies; every fetch passes an SSRF guard
+- **Modularity** — every data source is a plugin behind one `Collector` trait
+- **Transparency** — open source; every write is recorded in a hash-chained audit log
+- **Contracts** — behaviour is pinned by golden fixtures and a black-box API contract suite
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        OSIRIS PLATFORM                          │
-│                                                                 │
-│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   │
-│  │  Qt GUI  │   │ Tauri/   │   │   CLI    │   │  REST    │   │
-│  │(planned) │   │Electron  │   │          │   │  API     │   │
-│  └────┬─────┘   └────┬─────┘   └────┬─────┘   └────┬─────┘   │
-│       └──────────────┴──────────────┴──────────────┘          │
-│                              │                                  │
-│                    ┌─────────▼─────────┐                       │
-│                    │   API Gateway /   │                        │
-│                    │   Core Engine     │  (Python + Rust)       │
-│                    └─────────┬─────────┘                       │
-│              ┌───────────────┼───────────────┐                 │
-│              │               │               │                  │
-│    ┌─────────▼───┐  ┌────────▼──────┐  ┌────▼────────────┐    │
-│    │  Collector  │  │   Processing  │  │   Storage       │    │
-│    │  Manager    │  │   Pipeline    │  │   Layer         │    │
-│    │  (Python)   │  │   (Python)    │  │   (PostgreSQL)  │    │
-│    └──────┬──────┘  └───────────────┘  └─────────────────┘    │
-│           │                                                      │
-│    ┌──────▼──────────────────────────────────────────────┐      │
-│    │              Plugin Collection                       │      │
-│    │  [WWW] [Tor] [I2P] [RSS] [API] [IRC] [Shodan] ...  │      │
-│    └─────────────────────────────────────────────────────┘      │
-└─────────────────────────────────────────────────────────────────┘
+ Browser (React UI) ─┐        n8n ─┐
+                     ▼             ▼
+                 Nginx (TLS 8443, /api/* → osiris-api)
+                     │
+        ┌────────────▼─────────────┐        ┌────────────────────────┐
+        │ osiris-server api        │        │ osiris-server collector│
+        │ REST · JWT/RBAC · quota  │        │ cron · 11 plugins      │
+        └──────┬───────────┬───────┘        └──────────┬─────────────┘
+               │ SQL       │ XADD                      │ XADD
+               ▼           ▼                           ▼
+        PostgreSQL 16   Redis Streams  ──XREADGROUP──▶ osiris-server pipeline
+        (+ pgvector)    osiris:stream:raw_items        clean · regex+NER · embed · store
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for layers, data flow, and the security model.
+One image (`osiris:1.0.0-rc`) runs every role; the role is a subcommand. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for layers, data flow and the security model.
 
-## Modules
+## Components
 
-| Module | Language | Role | Status |
-|--------|----------|------|--------|
-| `crates/` | Rust | Shared core: SSRF guard, `content_hash` + audit chain, regex entity extraction — used by the Python services through `osiris_native` (PyO3) | ✅ R4 (Rust migration in progress — [plan](docs/RUST_GECIS_PLANI.md)) |
-| `osiris-collector` | Python | Manages collection plugins | ✅ Working |
-| `osiris-server` | Rust | REST API (`api`, JWT + RBAC + quotas), queue worker, collector scheduler and the 11 plugins | ✅ R6 API (`api` profile), R5 worker (`worker` profile) |
-| `osiris-pipeline` | Python | Cleaning, NER, classification, embedding, storage | ✅ Fallback worker (`worker-python` profile) |
-| `osiris-query` | Python → Rust | Full-text + semantic search (`crates/osiris-query`) | ✅ R6 Rust |
-| `osiris-graph` | Python → Rust | Entity relationship graph, centrality, CNM communities (`crates/osiris-graph`) | ✅ R6 Rust |
-| `osiris-alert` | Python → Rust | Alerts + anomaly detection, webhook/Telegram/e-mail (`crates/osiris-alert`) | ✅ R6 Rust |
-| `osiris-report` | Python → Rust | Report generation: MD/HTML/JSON/CSV/STIX (`crates/osiris-report`) | ✅ R6 Rust |
-| `osiris-api` | Python | REST API (JWT + RBAC) | ✅ Fallback (`api-python` profile; replaced by `osiris-server api`) |
-| `osiris-cli` | Python → Rust | Command-line interface — `osiris` is now Rust (`crates/osiris-cli`), Python version is `osiris-py` | ✅ R6 Rust |
-| `osiris-web-ui` | React/TS | Browser interface | Basic screens |
-| `osiris-sdk` | Python | Shared SDK (plugins, models, security, audit) | ✅ Working |
+| Path | Role |
+|------|------|
+| `crates/osiris-server` | Service binary: `api`, `pipeline`, `collector`, `migrate`, `models`, `audit-verify`, `purge`, `health` |
+| `crates/osiris-cli` | `osiris` CLI: `status`, `plugins`, `collect` (exit codes 0/1/2) |
+| `crates/osiris-plugins`, `osiris-plugin` | The 11 collectors and the host capabilities they may use (guarded HTTP, DNS, TCP) |
+| `crates/osiris-collector`, `osiris-queue` | Collection runs, source health, cron scheduler, queue producer |
+| `crates/osiris-pipeline` | Queue consumer: cleaning, language, regex + ONNX NER, classification, fastembed vectors |
+| `crates/osiris-db`, `osiris-query` | PostgreSQL access, migrations, audit chain, retention; full-text / semantic / entity search |
+| `crates/osiris-graph`, `osiris-alert`, `osiris-report` | Entity graph (centrality, CNM communities), alerts + anomalies, Markdown/HTML/JSON/CSV/STIX reports |
+| `crates/osiris-hash`, `osiris-extract`, `osiris-security`, `osiris-feed`, `osiris-types` | `content_hash`, canonical JSON, entity regexes, SSRF guard + sanitizers, RSS/Atom parsing, shared types |
+| `osiris-web-ui` | Browser interface (dashboard, search, sources, graph, alerts, reports) |
+| `db/migrations` | SQL schema (idempotent; embedded in the binary) |
+| `plugins/` | Plugin manifests and the username-search site databases (embedded at build time) |
 
 ## Technology Stack
 
-- **Languages:** Python 3.11+, Rust (stable, pinned in `rust-toolchain.toml`), TypeScript
-- **Database:** PostgreSQL 16 (+ pgvector, TimescaleDB optional), Redis
-- **Interface:** CLI, REST API, React + Tailwind Web UI
-- **Automation:** N8N, APScheduler
-- **Security:** TLS (8443), API keys + JWT + RBAC, SSRF guards, hash-chained audit logs
-- **Deployment:** Docker, Docker Compose, Nginx
+- **Language:** Rust (pinned in `rust-toolchain.toml`) — axum, sqlx, redis, ort (ONNX Runtime), fastembed, utoipa; TypeScript + React for the UI
+- **Data:** PostgreSQL 16 + pgvector (TimescaleDB optional), Redis Streams
+- **Security:** TLS (8443), operator key / DB keys (SHA-256) / JWT HS256, RBAC, per-identity quotas, SSRF guards, hash-chained audit log (RFC 8785)
+- **Operations:** Docker Compose, distroless image, Prometheus `/metrics`, JSON logs, n8n
 
 ## Quick Start
 
 ```bash
-# Copy environment template and fill in secrets
-cp .env.example .env
+cp .env.example .env              # set POSTGRES_PASSWORD, OSIRIS_API_KEY, OSIRIS_JWT_SECRET
+                                  # (openssl rand -hex 32 for each secret)
+./deploy/nginx/make-certs.sh      # self-signed TLS certificate (fresh installs)
 
-# Generate the TLS bootstrap certificate (fresh installs only)
-./deploy/nginx/make-certs.sh
+# Optional but recommended: NER + embedding models (~420 MB, hash-verified)
+docker compose --profile models run --rm --build osiris-models
 
-# Start infrastructure (PostgreSQL, Redis, N8N, Nginx)
-docker compose up -d
-
-# Start API + Web UI as well
+# Everything: PostgreSQL, Redis, n8n, Nginx, API, worker, collector, Web UI
 docker compose --profile full up -d --build
 
-# Install the CLI
-pip install -e ./osiris-cli
-
-# CLI usage
-osiris --help
+curl -sk https://localhost:8443/api/health        # {"service":"osiris-api","status":"ok"}
+docker compose exec osiris-api osiris plugins     # CLI inside the container
 ```
+
+The database schema is created on the first start of an empty PostgreSQL volume. When upgrading an existing installation, apply new migrations with `docker compose run --rm osiris-api migrate` (idempotent). Scheduled collection is **off** until you set `OSIRIS_SCHEDULER=on`. Step-by-step installation, configuration and operations: [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md).
 
 ### API authentication
 
 ```bash
-# Issue a token (operator key from .env)
-curl -X POST http://localhost:80/api/auth/token \
+# Short-lived JWT for the operator key (1 h)
+curl -sk -X POST https://localhost:8443/api/auth/token \
   -H 'Content-Type: application/json' \
   -d '{"api_key":"<OSIRIS_API_KEY>","role":"analyst"}'
 
-# Use it
-curl -X POST http://localhost:80/api/search \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer <token>' \
+curl -sk -X POST https://localhost:8443/api/search \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer <token>' \
   -d '{"query":"example","limit":5}'
 ```
 
-Roles: `viewer` (read) → `analyst` (collect + graph write) → `admin` (key management).
+Roles: `viewer` (read) → `analyst` (collect, sources, graph) → `admin` (keys, deletion, retention). Reference: [docs/API.md](docs/API.md); interactive docs at `/api/docs`.
 
-## Testing
+## Development
 
 ```bash
-pip install -e ./osiris-sdk -e ./osiris-collector -e ./osiris-pipeline \
-  -e ./osiris-graph -e ./osiris-alert -e ./osiris-report \
-  -e ./osiris-query -e ./osiris-api -e ./osiris-cli
-pip install pytest pytest-cov httpx
-pytest -q  # 80% coverage gate enforced
+cargo test --workspace                     # unit + golden fixture tests
+cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+Database/queue integration tests, model fixtures and the API contract suite are described in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ## Documentation
 
-- Full technical document: [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md)
+- Technical document (install, configuration, operations): [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md)
 - API reference: [docs/API.md](docs/API.md) ([Türkçe](docs/API.tr.md))
-- Architecture summary: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Contributing: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
+- Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Contributing, plugin guide: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
+- Behaviour contract (Turkish): [docs/SOZLESME.md](docs/SOZLESME.md); Rust migration record: [docs/RUST_GECIS_DURUMU.md](docs/RUST_GECIS_DURUMU.md)
 
 ## License
 

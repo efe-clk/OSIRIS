@@ -2,7 +2,7 @@
 
 # OSIRIS API Başvurusu
 
-> Sürüm: 0.2.0 · Uygulama: Rust (`osiris-server api`, R6) — yerini aldığı Python API ile aynı sözleşme (`tests/contract/`)
+> Sürüm: 1.0.0-rc · Uygulama: Rust (`osiris-server api`) — sözleşme `tests/contract/` ile sabit
 > İnteraktif doküman: `GET /docs` (Swagger UI), Nginx arkasında `/api/docs`; OpenAPI 3: `GET /openapi.json`
 > Taban URL (üretim): `https://<sunucu>:8443/api` · Doğrudan (dev): `http://localhost:8001`
 
@@ -267,7 +267,8 @@ Büyük toplu işlerde `/collect/batch` (≤10) kullanın ve istemcide tempo koy
 
 ## 16. Değişiklikler
 
-- **Yayımlanmadı (Rust R6)** — API Rust'ta (axum) yeniden yazıldı, sözleşme değişmedi; kimlik başına kota (`429`); `/metrics` (ayrı dinleyici); yapılandırılmış JSON log (`OSIRIS_LOG_FORMAT=json`); `/openapi.json`; zaman damgaları FastAPI biçiminde (`…Z`). `/graph/relation`'da kırpınca boş kalan kimlik artık `500` yerine `400` döner.
+- **1.0.0-rc (Rust R7)** — Python uygulaması kaldırıldı; sözleşme aynı. `osiris-server migrate` gömülü migration'ları uygular (006 eski `items.embedding` sütununu siler; denetim zinciri yalnızca v2).
+- **Rust R6** — API Rust'ta (axum) yeniden yazıldı, sözleşme değişmedi; kimlik başına kota (`429`); `/metrics` (ayrı dinleyici); yapılandırılmış JSON log (`OSIRIS_LOG_FORMAT=json`); `/openapi.json`; zaman damgaları FastAPI biçiminde (`…Z`). `/graph/relation`'da kırpınca boş kalan kimlik artık `500` yerine `400` döner.
 - **Yayımlanmadı (Rust R2)** — KVKK: `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run`, kaynaklarda `retention_days`; `OSIRIS_API_KEY` olmadan başlamaz; JWT sırrı API anahtarına düşmez (`/auth/token` → 503); audit zinciri v2 (RFC 8785).
 - **0.2.0** — listelerde sayfalama + filtreler; `GET /items/{id}` (+varlıklar), `GET /entities/top`, `POST /collect/batch`; UUID-güvenli id yolları; OpenAPI etiket/özetleri; `q` filtresinde LIKE-joker kaçışı.
 - **0.1.x** — sources CRUD + çalıştırma tetikleme, saved-queries CRUD, `/alerts/test`, `/reports/markdown`, `/stats`, `/items/recent`, JWT + RBAC, `/auth/keys`.

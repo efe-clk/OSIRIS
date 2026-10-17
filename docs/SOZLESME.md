@@ -1,25 +1,25 @@
 # OSIRIS — Diller Arası Geçiş Sözleşmesi
 
-> Rust geçişi **R2** (R4: Rust uygulamaları) · Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Durum: [RUST_GECIS_DURUMU.md](RUST_GECIS_DURUMU.md)
+> Sürüm 1.0.0-rc (Rust geçişi R7 sonrası) · Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Durum: [RUST_GECIS_DURUMU.md](RUST_GECIS_DURUMU.md)
 >
-> Bu belge, Python ve Rust uygulamalarının **aynı girdiye aynı çıktıyı** vermesi gereken her
-> noktayı tanımlar. Bağlayıcı olan metin değil **veridir**:
+> Bu belge OSIRIS'in diller ve sürümler arası **sabit kalması gereken** davranışını tanımlar.
+> Bağlayıcı olan metin değil **veridir**:
 >
-> | Ne | Nerede | Python doğrulaması |
+> | Ne | Nerede | Doğrulama |
 > |---|---|---|
-> | Altın veriler | `fixtures/` (dilden bağımsız JSON) | `tests/golden/test_golden.py` |
-> | Yapısal sözleşmeler | `schemas/*.schema.json` (JSON Schema 2020-12) | `tests/golden/test_schemas.py` |
+> | Altın veriler | `fixtures/` (dilden bağımsız JSON) | `cargo test --workspace` (crate'lerin `tests/fixtures.rs` dosyaları) |
+> | Yapısal sözleşmeler | `schemas/*.schema.json` (JSON Schema 2020-12) | `crates/osiris-types/tests/schemas.rs` |
 > | API davranışı | `tests/contract/` (çalışan servise gerçek HTTP) | CI `integration` işi |
-> | DB davranışı | `tests/integration/` (gerçek PostgreSQL) | CI `integration` işi |
-> | Rust uygulaması (R4) | `crates/osiris-{hash,extract,security}` aynı fixture'ları `cargo test` ile okur | `tests/golden/test_native_parity.py` (rastgele girdiyle Python ↔ Rust) |
+> | DB ve kuyruk davranışı | `crates/osiris-server/tests/integration.rs` (gerçek PostgreSQL + Redis) | CI `integration` işi |
+> | Modeller (NER, embedding) | `fixtures/ner`, `fixtures/embedding` | `crates/osiris-pipeline/tests/models.rs` |
 >
-> **Uygulama seçimi (R4):** Python servisleri §1, §2, §8 ve §12'yi varsayılan olarak Rust
-> uygulamasıyla çalıştırır (`osiris_native`, `OSIRIS_NATIVE=rust`); Python referansı
-> `OSIRIS_NATIVE=python` ile seçilir. CI tüm testleri iki yolda da koşar.
+> **Köken:** beklenen değerler R2–R6'da Python referans uygulamasından üretildi ve Rust'la birebir
+> eşleştirildi; Python uygulaması R7'de kaldırıldı (`1a4525f` öncesi git geçmişinde). Aşağıdaki
+> "Kaynak:" satırlarındaki Python dosyaları bu tarihsel referansı gösterir; güncel uygulama
+> adı geçen `crates/` dosyalarıdır.
 >
-> **Değişiklik kuralı:** `python tests/golden/generate.py --check` bir fark gösteriyorsa bu bir
-> *sözleşme değişikliğidir*. Bu belge güncellenir, fark commit'te gözden geçirilir; Rust tarafı
-> aynı commit'te (ya da açık bir sürüm artışıyla) uyarlanır.
+> **Değişiklik kuralı:** bir fixture'ın `expected` değerini değiştirmek *sözleşme
+> değişikliğidir*: bu belge güncellenir ve fark commit'te gerekçelendirilir.
 
 ---
 
@@ -77,15 +77,17 @@ Kaynak: `osiris-sdk/osiris/audit.py`, Rust: `crates/osiris-hash/src/audit.rs`. F
 
 | Sürüm | Serileştirme |
 |---|---|
-| 1 | Python `json.dumps(kayıt, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)` — yalnızca doğrulanır, yeni yazılmaz |
+| 1 | *(R7'de kaldırıldı)* Python `json.dumps(sort_keys=True, separators=(",", ":"))` — migration 003 öncesi kayıtlar; artık doğrulanmaz, "Bilinmeyen chain_version: 1" raporlanır |
 | **2** | **RFC 8785 (JCS)**. Doğrulamada güvenli aralık dışı tamsayılar önce float'a çevrilir (jsonb büyük float'ı tamsayı döndürür: `1e+16` → `10000000000000000`; JCS çıktısı aynıdır) |
 
 **Hash:** `hash = hex(sha256(utf8(prev + "|" + kanonik)))`; ilk kayıtta `prev = "GENESIS"`, DB'de
 ilk kaydın `prev_hash` sütunu `NULL`. Zincir sırası `id` artan; yazarlar
 `pg_advisory_xact_lock(hashtext('osiris_audit_chain'))` ile sıralanır.
 
-Geçiş: migration 003 öncesi kayıtlar `chain_version = 1` (varsayılan). Sütun yoksa yazıcı v1 yazar
-(kayıt kaybolmaz). Doğrulayıcı kayıt başına sürümü okur; karışık zincir geçerlidir.
+Yazıcı yalnızca v2 yazar (migration 003 zorunlu; 006 varsayılanı 2 yapar). **R7 kararı
+(kullanıcı, 2026-10-17):** v1 desteği tamamen kaldırıldı — tablodaki eski v1 kayıtlar
+değiştirilmez (append-only) ama `osiris-server audit-verify` onları doğrulamaz; v1 fixture
+durumları `fixtures/audit`'ten çıkarıldı.
 
 ## 3. STIX 2.1 çıktısı
 
@@ -150,7 +152,7 @@ atlanan tipler fixture'dadır. Bilinen sapma: STIX'in SCO için önerdiği names
 
 ## 5. Kuyruk (Redis Streams, R3)
 
-Kaynak: `osiris-sdk/osiris/queue.py` (sabitler tek yerde). Doğrulama: `tests/integration/test_queue_streams.py`.
+Kaynak: `osiris-sdk/osiris/queue.py` (sabitler tek yerde). Doğrulama: `crates/osiris-server/tests/integration.rs` (kuyruk testleri).
 
 **Mesaj** — `schemas/queue_message.schema.json`, UTF-8 JSON, en fazla 512 000 bayt:
 `{"plugin_id", "source_id" (UUID küçük harf | null), "item": CollectedItem, "collected_at": epoch_sn}`.
@@ -248,11 +250,11 @@ Fixture: `fixtures/graph/cases.json`. Graf **yönsüz, çift başına tek kenar*
 ## 10. Embedding (R3 / K5)
 
 Kaynak: `ProcessingPipeline.generate_embedding`. Fixture: `fixtures/embedding/cases.json`.
-Migration 005 (`items.embedding_v2 VECTOR(384)`, `items.embedding_model`).
+Migration 005 (`items.embedding_v2 VECTOR(384)`, `items.embedding_model`); eski `items.embedding VECTOR(1536)` sütunu migration 006 ile kaldırıldı (semantik arama yalnızca 384 boyut).
 
 - Model `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`; ONNX dosyası
   `Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q@faf4aa42…` `model_optimized.onnx`
-  (`models/download.py`, sha256 doğrulamalı). Rust: aynı dosya (fastembed-rs `ParaphraseMLMiniLML12V2Q`).
+  (`osiris-server models`, sha256 doğrulamalı; revizyonlar `crates/osiris-pipeline/src/models.rs`).
 - Girdi: `cleaned_content`'in ilk 8000 kod noktası; tokenizer'ın kendi kesmesi (fastembed varsayılanı)
   uygulanır. Çıktı **L2-normalize** edilir; sıfır vektör → vektör yok.
 - Karşılaştırma bayt bayt **değildir**: her fixture vektörüyle kosinüs ≥ 0.999 (ONNX çalışma zamanı/CPU farkı).
