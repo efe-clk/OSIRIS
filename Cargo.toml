@@ -19,6 +19,7 @@ osiris-security = { path = "crates/osiris-security" }
 osiris-types = { path = "crates/osiris-types" }
 osiris-plugin = { path = "crates/osiris-plugin" }
 osiris-plugins = { path = "crates/osiris-plugins" }
+osiris-feed = { path = "crates/osiris-feed" }
 osiris-db = { path = "crates/osiris-db" }
 osiris-pipeline = { path = "crates/osiris-pipeline" }
 ammonia = "4.2.4"

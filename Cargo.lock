@@ -1199,6 +1199,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "osiris-feed"
+version = "0.1.0"
+dependencies = [
+ "encoding_rs",
+ "fancy-regex",
+ "osiris-hash",
+ "osiris-security",
+ "quick-xml",
+ "regex",
+]
+
+[[package]]
 name = "osiris-hash"
 version = "0.1.0"
 dependencies = [
@@ -1228,10 +1240,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "osiris-plugins"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "osiris-feed",
+ "osiris-hash",
+ "osiris-plugin",
+ "osiris-security",
+ "osiris-types",
+ "regex",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "osiris-py"
 version = "0.1.0"
 dependencies = [
  "osiris-extract",
+ "osiris-feed",
  "osiris-hash",
  "osiris-security",
  "pyo3",
@@ -1396,6 +1425,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

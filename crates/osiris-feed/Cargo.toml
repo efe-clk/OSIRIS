@@ -1,0 +1,20 @@
+[package]
+name = "osiris-feed"
+description = "OSIRIS RSS/Atom ayrıştırma (feedparser alan kuralları) ve HTML temizleyici"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+encoding_rs.workspace = true
+fancy-regex.workspace = true
+osiris-hash.workspace = true
+osiris-security.workspace = true
+quick-xml.workspace = true
+regex.workspace = true
+
+[lints]
+workspace = true
