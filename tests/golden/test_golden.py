@@ -63,6 +63,16 @@ def test_graph(case) -> None:
     assert harness.run_graph(case) == case["expected"]
 
 
+@pytest.mark.parametrize("case", _cases("report"))
+def test_report(case) -> None:
+    assert harness.run_report(case) == case["expected"]
+
+
+@pytest.mark.parametrize("case", _cases("alert"))
+def test_alert(case) -> None:
+    assert harness.run_alert(case) == case["expected"]
+
+
 _PLUGIN_FILES = sorted((harness.FIXTURES / "plugins").glob("*.json"))
 
 

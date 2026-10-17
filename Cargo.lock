@@ -2342,6 +2342,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "osiris-graph"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "indexmap",
+ "osiris-hash",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "osiris-hash"
 version = "0.1.0"
 dependencies = [

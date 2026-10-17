@@ -84,17 +84,80 @@ def run_stix(case: dict) -> dict:
 
 # -------------------------------------------------------------------------- graph
 def run_graph(case: dict) -> dict:
+    import networkx as nx
     from osiris_graph.engine import GraphEngine
 
     g = GraphEngine()
+    attrs = case.get("node_attrs", {})
     for node in case.get("nodes", []):
-        g.add_entity(node)
+        g.add_entity(node, **attrs.get(node, {}))
     for e in case["edges"]:
-        g.add_relation(e[0], e[1], e[2] if len(e) > 2 else "related")
+        g.add_relation(e[0], e[1], e[2] if len(e) > 2 else "related",
+                       e[3] if len(e) > 3 else 1.0)
     centrality = {k: round(v, 12) for k, v in sorted(g.centrality().items())}
     # Topluluk SIRASI sözleşme dışıdır: her topluluk ve liste sıralanır
     communities = sorted(sorted(c) for c in g.communities())
-    return {"degree_centrality": centrality, "communities": communities}
+    graphml = io.BytesIO()
+    nx.write_graphml(g.graph, graphml)
+    return {"degree_centrality": centrality, "communities": communities,
+            # /graph ucunun gövdesi (düğüm/kenar sırası networkx ile aynı)
+            "to_json": json.loads(g.to_json()),
+            "graphml": graphml.getvalue().decode("utf-8")}
+
+
+# ------------------------------------------------------------------------- report
+def run_report(case: dict) -> dict:
+    import csv
+    import tempfile
+
+    from osiris_report import generator as gen_mod
+
+    fixed = datetime.fromisoformat(case["now"])
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: ARG003 — sabit saat (generated_at)
+            return fixed
+
+    gen = gen_mod.ReportGenerator.__new__(gen_mod.ReportGenerator)
+    from jinja2 import BaseLoader, Environment
+
+    gen.env = Environment(loader=BaseLoader(), autoescape=True)
+    args = (case["title"], case.get("scope", ""), case.get("summary", ""),
+            case.get("findings", []), case.get("sources", []))
+    with mock.patch.object(gen_mod, "datetime", _Clock):
+        markdown = gen.generate_markdown(*args)
+        html = gen.generate_html(*args)
+    out = {"markdown": markdown, "html": html}
+    if "csv_rows" in case:
+        with tempfile.TemporaryDirectory() as tmp:
+            gen.output_dir = Path(tmp).resolve()
+            gen.generate_csv(case["csv_rows"], "rapor")
+            with open(Path(tmp) / "rapor.csv", encoding="utf-8", newline="") as fh:
+                out["csv"] = fh.read()
+            assert list(csv.reader(io.StringIO(out["csv"])))  # geçerli CSV
+    return out
+
+
+# -------------------------------------------------------------------------- alert
+def run_alert(case: dict) -> dict:
+    from osiris_alert.manager import AlertManager
+
+    m = AlertManager(redis_url=None, **case.get("options", {}))
+    for qid in case.get("muted", []):
+        m.mute(qid)
+    out: dict = {}
+    if "item" in case:
+        out["triggered"] = m.check_item(case["item"], case.get("queries", []))
+    if "metrics" in case:
+        results = []
+        for step in case["metrics"]:
+            if step.get("record", True):
+                m.record_metric(case.get("metric", "m"), step["value"])
+            else:
+                results.append(m.check_anomaly(case.get("metric", "m"), step["value"]))
+        out["anomalies"] = results
+    return out
 
 
 # ------------------------------------------------------------------------ plugins
@@ -265,7 +328,8 @@ def run_security(case: dict) -> dict:
 
 
 RUNNERS = {"hash": run_hash, "extract": run_extract, "audit": run_audit,
-           "stix": run_stix, "graph": run_graph, "security": run_security}
+           "stix": run_stix, "graph": run_graph, "security": run_security,
+           "report": run_report, "alert": run_alert}
 
 
 # ---------------------------------------------------------------------- embedding

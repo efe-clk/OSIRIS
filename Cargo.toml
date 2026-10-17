@@ -24,6 +24,7 @@ osiris-db = { path = "crates/osiris-db" }
 osiris-pipeline = { path = "crates/osiris-pipeline" }
 osiris-queue = { path = "crates/osiris-queue" }
 osiris-collector = { path = "crates/osiris-collector" }
+osiris-graph = { path = "crates/osiris-graph" }
 ammonia = "4.2.4"
 anyhow = "1.0.104"
 async-trait = "0.1.92"
@@ -35,6 +36,7 @@ encoding_rs = "0.8.42"
 fastembed = { version = "7.1.1", default-features = false, features = ["ort-download-binaries-rustls-tls"] }
 futures = "0.3.34"
 hickory-resolver = "0.26.3"
+indexmap = "2.14.2"
 jsonschema = { version = "0.59.0", default-features = false }
 lingua = { version = "1.8.0", default-features = false, features = ["arabic", "chinese", "dutch", "english", "french", "german", "italian", "japanese", "korean", "persian", "polish", "portuguese", "russian", "spanish", "turkish", "ukrainian"] }
 ndarray = "0.17.2"
