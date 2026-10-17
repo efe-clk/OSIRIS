@@ -43,6 +43,11 @@ enum Cmd {
         #[arg(long, env = "OSIRIS_METRICS_ADDR", default_value = "")]
         metrics_addr: String,
     },
+    /// API sağlık denetimi (konteyner HEALTHCHECK): `GET /health` 200 → çıkış 0
+    Health {
+        #[arg(long, default_value = "127.0.0.1:8000")]
+        addr: String,
+    },
     /// Kuyruk işçisi (Python `osiris-pipeline` ile aynı bayraklar)
     Pipeline {
         #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u64).range(1..=1000))]
@@ -160,6 +165,21 @@ async fn main() -> anyhow::Result<()> {
         fmt.init();
     }
     match cli.cmd {
+        Cmd::Health { addr } => {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let probe = async {
+                let mut s = tokio::net::TcpStream::connect(&addr).await?;
+                s.write_all(b"GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n").await?;
+                let mut buf = Vec::new();
+                s.read_to_end(&mut buf).await?;
+                Ok::<_, std::io::Error>(
+                    buf.starts_with(b"HTTP/1.0 200") || buf.starts_with(b"HTTP/1.1 200"),
+                )
+            };
+            let ok =
+                matches!(tokio::time::timeout(Duration::from_secs(5), probe).await, Ok(Ok(true)));
+            std::process::exit(if ok { 0 } else { 1 });
+        }
         Cmd::Api { addr, metrics_addr } => {
             use osiris_server::api;
             let cfg = api::Config::from_env();

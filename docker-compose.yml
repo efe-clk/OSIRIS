@@ -67,6 +67,8 @@ services:
       N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-osiris_dev_password}
       # OSIRIS workflow'larinin API cagrilari icin ({{ $env.OSIRIS_API_KEY }})
       OSIRIS_API_KEY: ${OSIRIS_API_KEY:-}
+      # Ifadelerde $env erisimi (n8n surumu varsayilani degistirse de acik kalsin)
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
     volumes:
       - n8ndata:/home/node/.n8n
     ports:
@@ -111,12 +113,57 @@ services:
 
   # NOT: nginx.conf bu servis adlarına proxy yapar; tanımsız bırakılırsa
   # nginx DNS çözümlemede başarısız olur. Profillerle isteğe bağlı başlatılır.
+  # --- REST API (R6): Rust osiris-server `api` — Python osiris-api'nin yerine, aynı sözleşme.
+  # Nginx /api/* ve n8n bu servise (osiris-api:8000) gider. Prometheus ölçümleri yalnızca iç
+  # ağda: osiris-api:9464/metrics (host'a yayınlanmaz).
   osiris-api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.server
+    image: osiris-server:0.1.0
+    container_name: osiris-api
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *default-logging
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["api", "--addr", "0.0.0.0:8000"]
+    environment:
+      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
+      OSIRIS_REDIS_URL: redis://redis:6379/0
+      OSIRIS_API_KEY: ${OSIRIS_API_KEY:-}
+      OSIRIS_JWT_SECRET: ${OSIRIS_JWT_SECRET:-}
+      OSIRIS_INSECURE_OPEN: ${OSIRIS_INSECURE_OPEN:-}
+      OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
+      OSIRIS_API_RATE_PER_MIN: ${OSIRIS_API_RATE_PER_MIN:-600}
+      OSIRIS_METRICS_ADDR: 0.0.0.0:9464
+      OSIRIS_LOG_FORMAT: json
+      # Karanlık ağ proxy'leri (yalnızca darknet profili açıksa çalışır)
+      OSIRIS_TOR_SOCKS: ${OSIRIS_TOR_SOCKS:-tor:9050}
+      OSIRIS_I2P_HTTP_PROXY: ${OSIRIS_I2P_HTTP_PROXY:-i2pd:4444}
+      OSIRIS_CORS_ORIGINS: ${OSIRIS_CORS_ORIGINS:-http://localhost:3000}
+    healthcheck:
+      test: ["CMD", "osiris-server", "health", "--addr", "127.0.0.1:8000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ports:
+      # Yalnızca localhost (dış erişim nginx üzerinden). 8000 dolu olabilir.
+      - "127.0.0.1:8001:8000"
+    profiles: ["api", "full"]
+
+  # Python API (yedek / geri dönüş) — profil: api-python. `osiris-api` ağ takma adı sayesinde
+  # Nginx ve n8n değişmeden buna gider: YALNIZCA Rust osiris-api durdurulduktan sonra başlatın
+  # (ikisi birden çalışırsa ad iki konteynere çözülür). Adımlar: docs/RUST_GECIS_DURUMU.md R6.
+  osiris-api-python:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile.api
     image: osiris-api:0.1.0
-    container_name: osiris-api
+    container_name: osiris-api-python
     restart: unless-stopped
     mem_limit: 1g
     logging: *default-logging
@@ -132,14 +179,15 @@ services:
       OSIRIS_JWT_SECRET: ${OSIRIS_JWT_SECRET:-}
       OSIRIS_INSECURE_OPEN: ${OSIRIS_INSECURE_OPEN:-}
       OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
-      # Karanlık ağ proxy'leri (yalnızca darknet profili açıksa çalışır)
       OSIRIS_TOR_SOCKS: ${OSIRIS_TOR_SOCKS:-tor:9050}
       OSIRIS_I2P_HTTP_PROXY: ${OSIRIS_I2P_HTTP_PROXY:-i2pd:4444}
-      OSIRIS_CORS_ORIGINS: http://localhost:3000
+      OSIRIS_CORS_ORIGINS: ${OSIRIS_CORS_ORIGINS:-http://localhost:3000}
+    networks:
+      default:
+        aliases: ["osiris-api"]
     ports:
-      # Yalnızca localhost (dış erişim nginx üzerinden). 8000 dolu olabilir.
-      - "127.0.0.1:8001:8000"
-    profiles: ["api", "full"]
+      - "127.0.0.1:8002:8000"
+    profiles: ["api-python"]
 
   # --- Veri katmanı (R5): Rust işçisi + collector (profil: worker) -------------
   # Kuyruk işçisi — osiris:stream:raw_items'i tüketir, DB'ye yazar, saklama süresi dolan

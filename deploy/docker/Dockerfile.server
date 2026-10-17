@@ -1,5 +1,7 @@
-# OSIRIS Rust servisleri (R5): pipeline işçisi, collector zamanlayıcısı, gölge karşılaştırma.
-# Kullanım: python models/download.py && docker compose --profile worker up -d --build
+# OSIRIS Rust servisleri: REST API (R6), pipeline işçisi, collector zamanlayıcısı, gölge
+# karşılaştırma (R5) + `osiris` CLI. Tek imaj, alt komutla seçilir (compose `command`).
+# Kullanım: docker compose --profile api up -d --build   (işçi: python models/download.py &&
+#           docker compose --profile worker up -d --build)
 # Modeller imaja GÖMÜLMEZ: ./models salt-okunur bağlanır (yoksa yalnızca regex, vektörsüz).
 FROM rust:1.99.1-slim-trixie AS build
 # rust-toolchain.toml'daki bileşenleri (rustfmt/clippy) indirmesin: imajdaki sürüm aynı
@@ -13,15 +15,15 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
 # manifest.json ve username-search site DB'leri derleme zamanında gömülür
 COPY plugins ./plugins
-RUN cargo build --release --locked -p osiris-server \
- && cp target/release/osiris-server /osiris-server
+RUN cargo build --release --locked -p osiris-server -p osiris-cli \
+ && cp target/release/osiris-server target/release/osiris /
 
 FROM debian:trixie-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /app/models
-COPY --from=build /osiris-server /usr/local/bin/osiris-server
+COPY --from=build /osiris-server /osiris /usr/local/bin/
 ENV OSIRIS_MODEL_DIR=/app/models
 WORKDIR /app
 USER nobody
