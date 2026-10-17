@@ -488,6 +488,10 @@ async fn embedding_v2_yazilir_ve_semantik_arama_bulur() {
     let _g = LOCK.lock().await;
     let pool = need!(db().await);
     let Some(e) = embedder() else {
+        assert!(
+            std::env::var("OSIRIS_REQUIRE_MODELS").as_deref() != Ok("1"),
+            "embedding modeli yok ama OSIRIS_REQUIRE_MODELS=1"
+        );
         eprintln!("atlandı: embedding modeli yok (osiris-server models)");
         return;
     };

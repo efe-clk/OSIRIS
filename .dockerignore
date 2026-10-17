@@ -1,13 +1,6 @@
-# OSIRIS — Docker build bağlamı dışında tutulacaklar
-# (özellikle kök context kullanan osiris-api imajı için kritik)
+# OSIRIS — Docker build bağlamı dışında tutulacaklar (kök context)
 .git/
 .gitignore
-**/__pycache__/
-**/*.py[cod]
-**/.pytest_cache/
-**/.ruff_cache/
-**/.venv/
-venv/
 node_modules/
 osiris-web-ui/dist/
 osiris-web-ui/node_modules/
@@ -23,7 +16,11 @@ reports/
 .DS_Store
 .idea/
 .vscode/
-# Rust derleme çıktısı ve ONNX modelleri (worker'a salt-okunur bağlanır, imaja girmez)
+# Rust derleme çıktısı ve ONNX modelleri (salt-okunur bağlanır, imaja girmez)
 target/
 **/target/
 models/
+# Geliştirme araçları ve testler (imaja girmez)
+tools/
+tests/
+**/__pycache__/

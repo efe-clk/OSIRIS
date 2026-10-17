@@ -2441,7 +2441,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-alert"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "async-trait",
  "lettre",
@@ -2455,7 +2455,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-cli"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "clap",
  "osiris-collector",
@@ -2467,7 +2467,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-collector"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2487,7 +2487,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-db"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "osiris-hash",
  "serde_json",
@@ -2497,7 +2497,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-extract"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "fancy-regex",
  "regex",
@@ -2506,7 +2506,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-feed"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "encoding_rs",
  "fancy-regex",
@@ -2518,7 +2518,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-graph"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "chrono",
  "indexmap",
@@ -2529,7 +2529,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-hash"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "ryu",
  "ryu-js",
@@ -2539,7 +2539,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-pipeline"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "anyhow",
  "fastembed",
@@ -2566,7 +2566,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-plugin"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2585,7 +2585,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-plugins"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "async-trait",
  "osiris-feed",
@@ -2601,7 +2601,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-query"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "osiris-db",
  "osiris-hash",
@@ -2613,14 +2613,14 @@ dependencies = [
 
 [[package]]
 name = "osiris-queue"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "redis",
 ]
 
 [[package]]
 name = "osiris-report"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "chrono",
  "osiris-hash",
@@ -2632,7 +2632,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-security"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "regex",
  "serde",
@@ -2642,7 +2642,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-server"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "anyhow",
  "axum",
@@ -2683,7 +2683,7 @@ dependencies = [
 
 [[package]]
 name = "osiris-types"
-version = "0.1.0"
+version = "1.0.0-rc"
 dependencies = [
  "indexmap",
  "jsonschema",

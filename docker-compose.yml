@@ -13,6 +13,26 @@ x-defaults:
       max-size: "10m"
       max-file: "3"
 
+# OSIRIS hizmetlerinin ortak ayarları (tek imaj, alt komutla seçilir)
+x-osiris-env: &osiris-env
+  OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
+  OSIRIS_REDIS_URL: redis://redis:6379/0
+  OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
+  OSIRIS_LOG_FORMAT: json
+  # Karanlık ağ proxy'leri (yalnızca darknet profili açıksa çalışır)
+  OSIRIS_TOR_SOCKS: ${OSIRIS_TOR_SOCKS:-tor:9050}
+  OSIRIS_I2P_HTTP_PROXY: ${OSIRIS_I2P_HTTP_PROXY:-i2pd:4444}
+
+x-osiris-service: &osiris-service
+  image: osiris:1.0.0-rc
+  restart: unless-stopped
+  logging: *default-logging
+  depends_on:
+    postgresql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   postgresql:
     image: pgvector/pgvector:pg16
@@ -113,37 +133,24 @@ services:
 
   # NOT: nginx.conf bu servis adlarına proxy yapar; tanımsız bırakılırsa
   # nginx DNS çözümlemede başarısız olur. Profillerle isteğe bağlı başlatılır.
-  # --- REST API (R6): Rust osiris-server `api` — Python osiris-api'nin yerine, aynı sözleşme.
-  # Nginx /api/* ve n8n bu servise (osiris-api:8000) gider. Prometheus ölçümleri yalnızca iç
-  # ağda: osiris-api:9464/metrics (host'a yayınlanmaz).
+  # --- OSIRIS (Rust, tek imaj) ----------------------------------------------------
+  # REST API — Nginx /api/* ve n8n bu servise (osiris-api:8000) gider. Prometheus ölçümleri
+  # yalnızca iç ağda: osiris-api:9464/metrics (host'a yayınlanmaz).
   osiris-api:
+    <<: *osiris-service
     build:
       context: .
-      dockerfile: deploy/docker/Dockerfile.server
-    image: osiris-server:0.1.0
+      dockerfile: deploy/docker/Dockerfile
     container_name: osiris-api
-    restart: unless-stopped
     mem_limit: 512m
-    logging: *default-logging
-    depends_on:
-      postgresql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     command: ["api", "--addr", "0.0.0.0:8000"]
     environment:
-      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
-      OSIRIS_REDIS_URL: redis://redis:6379/0
+      <<: *osiris-env
       OSIRIS_API_KEY: ${OSIRIS_API_KEY:-}
       OSIRIS_JWT_SECRET: ${OSIRIS_JWT_SECRET:-}
       OSIRIS_INSECURE_OPEN: ${OSIRIS_INSECURE_OPEN:-}
-      OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
       OSIRIS_API_RATE_PER_MIN: ${OSIRIS_API_RATE_PER_MIN:-600}
       OSIRIS_METRICS_ADDR: 0.0.0.0:9464
-      OSIRIS_LOG_FORMAT: json
-      # Karanlık ağ proxy'leri (yalnızca darknet profili açıksa çalışır)
-      OSIRIS_TOR_SOCKS: ${OSIRIS_TOR_SOCKS:-tor:9050}
-      OSIRIS_I2P_HTTP_PROXY: ${OSIRIS_I2P_HTTP_PROXY:-i2pd:4444}
       OSIRIS_CORS_ORIGINS: ${OSIRIS_CORS_ORIGINS:-http://localhost:3000}
     healthcheck:
       test: ["CMD", "osiris-server", "health", "--addr", "127.0.0.1:8000"]
@@ -155,80 +162,31 @@ services:
       - "127.0.0.1:8001:8000"
     profiles: ["api", "full"]
 
-  # Python API (yedek / geri dönüş) — profil: api-python. `osiris-api` ağ takma adı sayesinde
-  # Nginx ve n8n değişmeden buna gider: YALNIZCA Rust osiris-api durdurulduktan sonra başlatın
-  # (ikisi birden çalışırsa ad iki konteynere çözülür). Adımlar: docs/RUST_GECIS_DURUMU.md R6.
-  osiris-api-python:
-    build:
-      context: .
-      dockerfile: deploy/docker/Dockerfile.api
-    image: osiris-api:0.1.0
-    container_name: osiris-api-python
-    restart: unless-stopped
-    mem_limit: 1g
-    logging: *default-logging
-    depends_on:
-      postgresql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
-      OSIRIS_REDIS_URL: redis://redis:6379/0
-      OSIRIS_API_KEY: ${OSIRIS_API_KEY:-}
-      OSIRIS_JWT_SECRET: ${OSIRIS_JWT_SECRET:-}
-      OSIRIS_INSECURE_OPEN: ${OSIRIS_INSECURE_OPEN:-}
-      OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
-      OSIRIS_TOR_SOCKS: ${OSIRIS_TOR_SOCKS:-tor:9050}
-      OSIRIS_I2P_HTTP_PROXY: ${OSIRIS_I2P_HTTP_PROXY:-i2pd:4444}
-      OSIRIS_CORS_ORIGINS: ${OSIRIS_CORS_ORIGINS:-http://localhost:3000}
-    networks:
-      default:
-        aliases: ["osiris-api"]
-    ports:
-      - "127.0.0.1:8002:8000"
-    profiles: ["api-python"]
-
-  # --- Veri katmanı (R5): Rust işçisi + collector (profil: worker) -------------
   # Kuyruk işçisi — osiris:stream:raw_items'i tüketir, DB'ye yazar, saklama süresi dolan
-  # öğeleri siler (OSIRIS_RETENTION_DAYS!). Geçiş: önce OSIRIS_PIPELINE_SHADOW=1 ile gölge
-  # mod (Python işçisi worker-python profilinde çalışırken karşılaştırır, yazmaz).
-  #   python models/download.py && docker compose --profile worker up -d --build
+  # öğeleri siler (OSIRIS_RETENTION_DAYS!). NER/embedding için önce modeller (osiris-models).
   osiris-pipeline:
+    <<: *osiris-service
     build:
       context: .
-      dockerfile: deploy/docker/Dockerfile.server
-    image: osiris-server:0.1.0
+      dockerfile: deploy/docker/Dockerfile
     container_name: osiris-pipeline
-    restart: unless-stopped
     mem_limit: 2g
-    logging: *default-logging
-    depends_on:
-      postgresql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     command: ["pipeline", "--loop", "--interval", "5", "--batch", "50"]
     environment:
-      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
-      OSIRIS_REDIS_URL: redis://redis:6379/0
+      <<: *osiris-env
       OSIRIS_EMBEDDING_MODEL: ${OSIRIS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
-      OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
       OSIRIS_RETENTION_INTERVAL: ${OSIRIS_RETENTION_INTERVAL:-3600}
-      OSIRIS_PIPELINE_CONSUMER: osiris-pipeline-rust-1
-      OSIRIS_PIPELINE_SHADOW: ${OSIRIS_PIPELINE_SHADOW:-0}
+      OSIRIS_PIPELINE_CONSUMER: osiris-pipeline-1
     volumes:
       - ./models:/app/models:ro
-    profiles: ["worker"]
+    profiles: ["worker", "full"]
 
-  # Collector — sources.schedule'a göre toplar (E2). Zamanlama VARSAYILAN KAPALI:
+  # Collector — sources.schedule'a göre toplar. Zamanlama VARSAYILAN KAPALI:
   # kaynakların schedule değerlerini gözden geçirdikten sonra OSIRIS_SCHEDULER=on.
   osiris-collector:
-    image: osiris-server:0.1.0
+    <<: *osiris-service
     container_name: osiris-collector
-    restart: unless-stopped
     mem_limit: 512m
-    logging: *default-logging
     depends_on:
       postgresql:
         condition: service_healthy
@@ -238,44 +196,27 @@ services:
         condition: service_started
     command: ["collector"]
     environment:
-      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
-      OSIRIS_REDIS_URL: redis://redis:6379/0
+      <<: *osiris-env
       OSIRIS_SCHEDULER: ${OSIRIS_SCHEDULER:-off}
-      OSIRIS_TOR_SOCKS: ${OSIRIS_TOR_SOCKS:-tor:9050}
-      OSIRIS_I2P_HTTP_PROXY: ${OSIRIS_I2P_HTTP_PROXY:-i2pd:4444}
-    profiles: ["worker"]
+    profiles: ["worker", "full"]
 
-  # Python işçisi (yedek / gölge karşılaştırmasının referansı) — profil: worker-python.
-  # Geri dönüş: docker compose stop osiris-pipeline && docker compose --profile worker-python up -d
-  osiris-pipeline-python:
+  # ONNX modellerini indirir/doğrular (tek seferlik): docker compose --profile models run --rm osiris-models
+  # ./models dizinine host kullanıcısıyla yazar (OSIRIS_UID/OSIRIS_GID, varsayılan 1000).
+  osiris-models:
+    image: osiris:1.0.0-rc
     build:
       context: .
-      dockerfile: deploy/docker/Dockerfile.pipeline
-    image: osiris-pipeline:0.1.0
-    container_name: osiris-pipeline-python
-    restart: unless-stopped
-    mem_limit: 2g
-    logging: *default-logging
-    depends_on:
-      postgresql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      OSIRIS_DATABASE_URL: postgresql://osiris:${POSTGRES_PASSWORD:-osiris_dev_password}@postgresql:5432/osiris
-      OSIRIS_REDIS_URL: redis://redis:6379/0
-      OSIRIS_EMBEDDING_MODEL: ${OSIRIS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
-      OSIRIS_RETENTION_DAYS: ${OSIRIS_RETENTION_DAYS:-180}
-      OSIRIS_RETENTION_INTERVAL: ${OSIRIS_RETENTION_INTERVAL:-3600}
-      OSIRIS_PIPELINE_CONSUMER: osiris-pipeline-1
+      dockerfile: deploy/docker/Dockerfile
+    user: "${OSIRIS_UID:-1000}:${OSIRIS_GID:-1000}"
+    command: ["models", "--dir", "/app/models"]
     volumes:
-      - ./models:/app/models:ro
-    profiles: ["worker-python"]
+      - ./models:/app/models
+    profiles: ["models"]
 
   osiris-web-ui:
     build:
       context: ./osiris-web-ui
-    image: osiris-web-ui:0.1.0
+    image: osiris-web-ui:1.0.0-rc
     container_name: osiris-web-ui
     restart: unless-stopped
     mem_limit: 256m

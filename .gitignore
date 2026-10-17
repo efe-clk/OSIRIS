@@ -8,7 +8,7 @@ dist/
 *.exe
 *.out
 
-# Python
+# Python (yalnızca sözleşme testleri ve geliştirme araçları)
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -54,10 +54,9 @@ Thumbs.db
 .vscode/
 *.swp
 
-# ONNX modelleri (models/download.py indirir; repoya gömülmez)
+# ONNX modelleri (`osiris-server models` indirir; repoya gömülmez)
 models/*
 !models/README.md
-!models/download.py
 
 # Rust
 /target/
