@@ -382,6 +382,54 @@ pub async fn append_audit(
     Ok(AuditAppend { prev_hash, hash: digest, chain_version: version })
 }
 
+/// `verify_chain` sonucu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChainReport {
+    pub ok: bool,
+    pub checked: usize,
+    /// Pencere tablonun başını içermiyor (ilk kaydın öncülü doğrulanamadı).
+    pub truncated: bool,
+    pub error: Option<String>,
+}
+
+/// `osiris.audit.verify_chain`: son `limit` kaydın (1–100 000) zincir bütünlüğü.
+pub async fn verify_chain(pool: &PgPool, limit: i64) -> Result<ChainReport, Error> {
+    use osiris_hash::Json;
+    use osiris_hash::audit::{AuditRow, verify_records};
+    let rows = sqlx::query(
+        "SELECT id, user_id, action, resource, detail::text, prev_hash::text, hash::text, \
+         chain_version::bigint FROM audit_logs ORDER BY id DESC LIMIT $1",
+    )
+    .bind(limit.clamp(1, 100_000))
+    .fetch_all(pool)
+    .await?;
+    let first_id: Option<i64> = rows.last().map(|r| r.get(0));
+    let min_id: Option<i64> =
+        sqlx::query_scalar("SELECT min(id) FROM audit_logs").fetch_one(pool).await?;
+    let rows: Vec<AuditRow> = rows
+        .iter()
+        .rev()
+        .map(|r| AuditRow {
+            user_id: r.get(1),
+            action: r.get(2),
+            resource: r.get(3),
+            detail: r
+                .get::<Option<String>, _>(4)
+                .map(|t| Json::parse_py(&t).unwrap_or(Json::Object(Vec::new()))),
+            prev_hash: r.get(5),
+            hash: r.get(6),
+            chain_version: r.get(7),
+        })
+        .collect();
+    let v = verify_records(&rows);
+    Ok(ChainReport {
+        ok: v.ok,
+        checked: v.checked,
+        truncated: v.ok && first_id.is_some() && first_id != min_id,
+        error: v.error,
+    })
+}
+
 // ---------------------------------------------------------------------- graf kenarları
 
 /// `GraphEngine.load_from_db`: en son görülen kenarlar (`limit` 1–100 000).

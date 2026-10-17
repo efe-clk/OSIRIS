@@ -21,6 +21,9 @@ osiris-queue.workspace = true
 osiris-types.workspace = true
 redis.workspace = true
 regex.workspace = true
+reqwest.workspace = true
+sha1.workspace = true
+sha2.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 tokenizers.workspace = true
@@ -29,3 +32,6 @@ tracing.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

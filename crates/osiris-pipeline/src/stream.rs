@@ -53,6 +53,8 @@ pub struct Consumer {
     pub group: String,
     pub consumer: String,
     pub legacy: Option<String>,
+    /// `XAUTOCLAIM` boşta kalma eşiği (ms; varsayılan 300 000).
+    pub claim_idle_ms: u64,
     embedding_v2: Option<bool>,
     group_ready: bool,
 }
@@ -72,6 +74,7 @@ impl Consumer {
             group: GROUP.into(),
             consumer,
             legacy: Some(LEGACY_LIST.into()),
+            claim_idle_ms: CLAIM_IDLE_MS,
             embedding_v2: None,
             group_ready: false,
         }
@@ -241,7 +244,7 @@ impl Consumer {
             .arg(&self.stream)
             .arg(&self.group)
             .arg(&self.consumer)
-            .arg(CLAIM_IDLE_MS)
+            .arg(self.claim_idle_ms)
             .arg("0-0")
             .arg("COUNT")
             .arg(*remaining)

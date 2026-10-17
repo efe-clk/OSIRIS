@@ -97,8 +97,21 @@ enum Cmd {
         #[arg(long)]
         enqueue: bool,
     },
+    /// ONNX modellerini indirir ve doğrular (sabit revizyon + özet; varsayılan $OSIRIS_MODEL_DIR)
+    Models {
+        #[arg(long, env = "OSIRIS_MODEL_DIR", default_value = "models")]
+        dir: std::path::PathBuf,
+        /// Yalnızca biri: embedding | ner
+        #[arg(long, value_parser = ["embedding", "ner"])]
+        only: Option<String>,
+    },
     /// Saklama süresi dolan öğeleri ve yetim varlıkları siler
     Purge,
+    /// Denetim zincirinin son N kaydını doğrular (bozuksa çıkış 1)
+    AuditVerify {
+        #[arg(long, default_value_t = 1000)]
+        limit: i64,
+    },
 }
 
 async fn redis_con(url: &str) -> anyhow::Result<redis::aio::MultiplexedConnection> {
@@ -215,6 +228,27 @@ async fn main() -> anyhow::Result<()> {
                 .with_graceful_shutdown(shutdown_signal())
                 .await?;
         }
+        Cmd::Models { dir, only } => {
+            for spec in osiris_pipeline::models::MODELS.iter() {
+                if only.as_deref().is_none_or(|o| o == spec.name) {
+                    osiris_pipeline::models::fetch(spec, &dir).await?;
+                }
+            }
+        }
+        Cmd::AuditVerify { limit } => {
+            let pool = pool(&cli.database_url)
+                .await?
+                .context("--database-url (OSIRIS_DATABASE_URL) gerekli")?;
+            let r = osiris_db::verify_chain(&pool, limit).await?;
+            println!(
+                "{}",
+                serde_json::json!({"ok": r.ok, "checked": r.checked, "truncated": r.truncated,
+                                   "error": r.error})
+            );
+            if !r.ok {
+                std::process::exit(1);
+            }
+        }
         Cmd::Purge => {
             let pool = pool(&cli.database_url)
                 .await?
@@ -240,19 +274,7 @@ async fn main() -> anyhow::Result<()> {
                     .embedder
                     .as_ref()
                     .context("--reembed için OSIRIS_EMBEDDING_MODEL gerekli")?;
-                let mut done = 0;
-                loop {
-                    let rows = osiris_db::items_without_embedding(&pool, 64).await?;
-                    if rows.is_empty() {
-                        break;
-                    }
-                    for (id, text) in rows {
-                        osiris_db::set_embedding(&pool, &id, e.embed(&text).as_deref(), &e.name)
-                            .await?;
-                        done += 1;
-                    }
-                    tracing::info!("Yeniden vektörleştirme: {done} öğe");
-                }
+                let done = osiris_pipeline::reembed(&pool, e, 64).await?;
                 println!("{done} öğe yeniden vektörleştirildi");
                 return Ok(());
             }
