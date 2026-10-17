@@ -33,8 +33,10 @@ jobs:
       - name: Plugin bağımlılıkları
         run: |
           for req in plugins/*/requirements.txt; do pip install -r "$req"; done
-      - name: HTML tabloları bs4 ile güncel mi (content_hash sözleşmesi)
-        run: python tools/gen_html_tables.py --check
+      - name: Üretilmiş tablolar güncel mi (bs4 → content_hash, feedparser → rss)
+        run: |
+          python tools/gen_html_tables.py --check
+          python tools/gen_feed_tables.py --check
       - name: Testleri çalıştır — Rust yolu (varsayılan, %80 kapsam eşiği)
         run: |
           pytest -q \
@@ -75,9 +77,12 @@ jobs:
           python-version: "3.11"
       - name: Migration'ları uygula (iki kez — tekrar çalıştırılabilirlik)
         run: |
-          for pass in 1 2; do
-            for f in db/migrations/*.sql; do
-              psql -h localhost -U osiris -d osiris_test -v ON_ERROR_STOP=1 -q -f "$f"
+          psql -h localhost -U osiris -d osiris_test -qc "CREATE DATABASE osiris_rust_test"
+          for db in osiris_test osiris_rust_test; do
+            for pass in 1 2; do
+              for f in db/migrations/*.sql; do
+                psql -h localhost -U osiris -d "$db" -v ON_ERROR_STOP=1 -q -f "$f"
+              done
             done
           done
       - name: ONNX modelleri (önbellekli; sabit revizyon + özet doğrulaması)
@@ -95,13 +100,24 @@ jobs:
           rustup toolchain install
           pip install ./crates/osiris-py
           for req in plugins/*/requirements.txt; do pip install -r "$req"; done
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust servis ikilisi (osiris-server) + Rust model fixture'ları (NER, embedding)
+        env:
+          OSIRIS_MODEL_DIR: models
+          OSIRIS_REQUIRE_MODELS: "1"
+        run: |
+          cargo build --release --locked -p osiris-server
+          cargo test --release --locked -p osiris-pipeline --test models
       - name: Entegrasyon + model golden testleri (NER, embedding)
         env:
           OSIRIS_MODEL_DIR: models
           HF_HUB_OFFLINE: "1"
           OSIRIS_REQUIRE_MODELS: "1"
+          OSIRIS_TEST_RUST_DATABASE_URL: postgresql://osiris:osiris@localhost:5432/osiris_rust_test
+          OSIRIS_SERVER_BIN: target/release/osiris-server
+          OSIRIS_EMBEDDING_MODEL: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
         run: |
-          pytest -q tests/integration
+          pytest -q tests/integration -rs
           pytest -q tests/golden -k "ner or embedding or models_present" -rs
       - name: Sözleşme (kara kutu) testleri — gerçek API'ye karşı
         env:

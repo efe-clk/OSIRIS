@@ -7,6 +7,11 @@ all-features = false
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+    # paste: bakım dışı (güvenlik açığı değil); tokenizers → fastembed zincirinden gelir,
+    # güvenli sürümü yok. Tokenizers değiştirince kaldırılmalı.
+    { id = "RUSTSEC-2024-0436", reason = "tokenizers bağımlılığı, alternatif yok (R5)" },
+]
 
 [licenses]
 version = 2
@@ -15,6 +20,11 @@ allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT-0",
     "Unicode-3.0",
     "Zlib",
 ]
