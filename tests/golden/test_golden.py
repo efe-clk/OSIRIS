@@ -48,6 +48,11 @@ def test_audit_chain(case) -> None:
     assert verify_records(rows)["ok"] is True
 
 
+@pytest.mark.parametrize("case", _cases("security"))
+def test_security(case) -> None:
+    assert harness.run_security(case) == case["expected"]
+
+
 @pytest.mark.parametrize("case", _cases("stix"))
 def test_stix_bytes(case) -> None:
     assert harness.run_stix(case) == case["expected"]

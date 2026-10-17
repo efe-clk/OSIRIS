@@ -9,8 +9,13 @@ güncellenmeli ve diff gözden geçirilmelidir.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# Beklenenler Python referans uygulamasından üretilir; Rust (osiris_native) aynı
+# fixture'ları kendi testleriyle + test_golden.py'nin varsayılan yolunda geçer.
+os.environ["OSIRIS_NATIVE"] = "python"
 
 sys.path.insert(0, str(Path(__file__).parent))
 import harness  # noqa: E402

@@ -1,0 +1,936 @@
+{
+  "dns": {
+    "example.com": [
+      "93.184.216.34"
+    ],
+    "v6.example.com": [
+      "2606:2800:220:1:248:1893:25c8:1946"
+    ],
+    "mixed.example.com": [
+      "93.184.216.34",
+      "192.168.0.9"
+    ],
+    "internal.example.com": [
+      "10.0.0.7"
+    ],
+    "metadata.example.com": [
+      "169.254.169.254"
+    ],
+    "mapped.example.com": [
+      "::ffff:127.0.0.1"
+    ],
+    "bad.example.com": [
+      "not-an-ip"
+    ],
+    "scoped.example.com": [
+      "fe80::1%2"
+    ],
+    "münchen.example": [
+      "93.184.216.34"
+    ],
+    "2130706433": [
+      "127.0.0.1"
+    ],
+    "0x7f.0.0.1": [
+      "127.0.0.1"
+    ],
+    "127.0.0.1\\x.attacker.example": [
+      "93.184.216.34"
+    ]
+  },
+  "cases": [
+    {
+      "name": "genel_https",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "https://example.com/a?q=1",
+        "allow_onion": false
+      },
+      "expected": {
+        "ok": "https://example.com/a?q=1"
+      }
+    },
+    {
+      "name": "buyuk_harf_sema_host",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "HTTP://EXAMPLE.COM:8080/x",
+        "allow_onion": false
+      },
+      "expected": {
+        "ok": "HTTP://EXAMPLE.COM:8080/x"
+      }
+    },
+    {
+      "name": "bas_son_bosluk_ozgun_url_doner",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "  https://example.com/  ",
+        "allow_onion": false
+      },
+      "expected": {
+        "ok": "  https://example.com/  "
+      }
+    },
+    {
+      "name": "ipv6_dis",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://v6.example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "ok": "http://v6.example.com/"
+      }
+    },
+    {
+      "name": "ipv6_literal_dis",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://[2606:2800:220:1:248:1893:25c8:1946]/",
+        "allow_onion": false
+      },
+      "expected": {
+        "ok": "http://[2606:2800:220:1:248:1893:25c8:1946]/"
+      }
+    },
+    {
+      "name": "idn_host",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://münchen.example/",
+        "allow_onion": false
+      },
+      "expected": {
+        "ok": "http://münchen.example/"
+      }
+    },
+    {
+      "name": "bos_kullanici_bilgisi_serbest",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://@example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "ok": "http://@example.com/"
+      }
+    },
+    {
+      "name": "bos_port",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://example.com:/",
+        "allow_onion": false
+      },
+      "expected": {
+        "ok": "http://example.com:/"
+      }
+    },
+    {
+      "name": "metadata",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://169.254.169.254/latest/meta-data",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: 169.254.169.254"
+      }
+    },
+    {
+      "name": "metadata_dns",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://metadata.example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: metadata.example.com"
+      }
+    },
+    {
+      "name": "localhost",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://localhost:8000/x",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: localhost"
+      }
+    },
+    {
+      "name": "localhost_nokta",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://LOCALHOST./",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: localhost."
+      }
+    },
+    {
+      "name": "loopback",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://127.0.0.1/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: 127.0.0.1"
+      }
+    },
+    {
+      "name": "ozel_ag",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://10.0.0.5/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: 10.0.0.5"
+      }
+    },
+    {
+      "name": "ondalik_loopback",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://2130706433/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: 2130706433"
+      }
+    },
+    {
+      "name": "onaltilik_loopback",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://0x7f.0.0.1/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: 0x7f.0.0.1"
+      }
+    },
+    {
+      "name": "ipv4_mapped_literal",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://[::ffff:127.0.0.1]/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: ::ffff:127.0.0.1"
+      }
+    },
+    {
+      "name": "ipv4_mapped_dns",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://mapped.example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: mapped.example.com"
+      }
+    },
+    {
+      "name": "ipv6_loopback",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://[::1]:8080/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: ::1"
+      }
+    },
+    {
+      "name": "ipv6_kapsamli_link_local",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://[fe80::1%25eth0]/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: fe80::1%25eth0"
+      }
+    },
+    {
+      "name": "karisik_kayit",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://mixed.example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: mixed.example.com"
+      }
+    },
+    {
+      "name": "ic_kayit",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://internal.example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: internal.example.com"
+      }
+    },
+    {
+      "name": "cozulmeyen_host",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://yok.example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: yok.example.com"
+      }
+    },
+    {
+      "name": "gecersiz_adres_kaydi",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://bad.example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: bad.example.com"
+      }
+    },
+    {
+      "name": "koseli_ipv4",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://[127.0.0.1]/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "An IPv4 address cannot be in brackets"
+      }
+    },
+    {
+      "name": "kapanmayan_kose",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://[::1/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "Invalid IPv6 URL"
+      }
+    },
+    {
+      "name": "ipvfuture",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://[v1.fe80::a+en1]/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: v1.fe80::a+en1"
+      }
+    },
+    {
+      "name": "file_sema",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "file:///etc/passwd",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İzin verilmeyen şema: 'file'"
+      }
+    },
+    {
+      "name": "ftp_sema",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "ftp://example.com/f",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İzin verilmeyen şema: 'ftp'"
+      }
+    },
+    {
+      "name": "javascript_sema",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "javascript:alert(1)",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İzin verilmeyen şema: 'javascript'"
+      }
+    },
+    {
+      "name": "semasiz",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "//example.com/a",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "İzin verilmeyen şema: ''"
+      }
+    },
+    {
+      "name": "kimlik_bilgisi",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://user:pass@example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "URL içinde kimlik bilgisi yasak"
+      }
+    },
+    {
+      "name": "yalniz_kullanici",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://user@example.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "URL içinde kimlik bilgisi yasak"
+      }
+    },
+    {
+      "name": "onion_tor_disi",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://abc.onion/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": ".onion adresleri yalnızca Tor plugin'i ile kullanılabilir"
+      }
+    },
+    {
+      "name": "onion_tor",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://abc.onion/",
+        "allow_onion": true
+      },
+      "expected": {
+        "ok": "http://abc.onion/"
+      }
+    },
+    {
+      "name": "onion_buyuk_harf",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://ABC.ONION/x",
+        "allow_onion": true
+      },
+      "expected": {
+        "ok": "http://ABC.ONION/x"
+      }
+    },
+    {
+      "name": "port_aralik_disi",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://example.com:99999/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "Port out of range 0-65535"
+      }
+    },
+    {
+      "name": "port_sifir",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://example.com:0/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "Geçersiz port"
+      }
+    },
+    {
+      "name": "port_sayi_degil",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://example.com:abc/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "Port could not be cast to integer value as 'abc'"
+      }
+    },
+    {
+      "name": "bos",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "URL boş veya çok uzun"
+      }
+    },
+    {
+      "name": "cok_uzun",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://example.com/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "URL boş veya çok uzun"
+      }
+    },
+    {
+      "name": "ters_egik_cizgi_ayristirici_farki",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://127.0.0.1\\x.attacker.example/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "URL geçersiz karakter içeriyor"
+      }
+    },
+    {
+      "name": "sekme_karakteri",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://example.com/\ta",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "URL geçersiz karakter içeriyor"
+      }
+    },
+    {
+      "name": "nfkc_netloc",
+      "fn": "assert_safe_url",
+      "args": {
+        "url": "http://exa℀mple.com/",
+        "allow_onion": false
+      },
+      "expected": {
+        "error": "netloc 'exa℀mple.com' contains invalid characters under NFKC normalization"
+      }
+    },
+    {
+      "name": "ipv4_literal",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "93.184.216.34"
+      },
+      "expected": {
+        "ok": [
+          "93.184.216.34"
+        ]
+      }
+    },
+    {
+      "name": "ipv4_mapped_genel",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "::ffff:8.8.8.8"
+      },
+      "expected": {
+        "ok": [
+          "::ffff:8.8.8.8"
+        ]
+      }
+    },
+    {
+      "name": "kirpma_kucuk_harf_nokta",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": " Example.COM. "
+      },
+      "expected": {
+        "ok": [
+          "93.184.216.34"
+        ]
+      }
+    },
+    {
+      "name": "bos",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": ""
+      },
+      "expected": {
+        "error": "Host boş"
+      }
+    },
+    {
+      "name": "yalniz_bosluk",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "   "
+      },
+      "expected": {
+        "error": "Host çözülemedi: "
+      }
+    },
+    {
+      "name": "localhost",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "localhost"
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: localhost"
+      }
+    },
+    {
+      "name": "belirtilmemis_v4",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "0.0.0.0"
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: 0.0.0.0"
+      }
+    },
+    {
+      "name": "belirtilmemis_v6",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "::"
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: ::"
+      }
+    },
+    {
+      "name": "kapsamli_genel_v6",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "2001:db8::1%eth0"
+      },
+      "expected": {
+        "ok": [
+          "2001:db8::1%eth0"
+        ]
+      }
+    },
+    {
+      "name": "kapsamli_link_local",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "fe80::1%eth0"
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: fe80::1%eth0"
+      }
+    },
+    {
+      "name": "kapsamli_dns_kaydi",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "scoped.example.com"
+      },
+      "expected": {
+        "error": "İç ağ/özel host engellendi: scoped.example.com"
+      }
+    },
+    {
+      "name": "bastaki_sifir_dns_e_gider",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "01.2.3.4"
+      },
+      "expected": {
+        "error": "Host çözülemedi: 01.2.3.4"
+      }
+    },
+    {
+      "name": "gecersiz_adres_kaydi",
+      "fn": "resolve_safe_ips",
+      "args": {
+        "host": "bad.example.com"
+      },
+      "expected": {
+        "error": "Geçersiz adres: not-an-ip"
+      }
+    },
+    {
+      "name": "domain_normalize",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "Example.COM."
+      },
+      "expected": {
+        "ok": "example.com"
+      }
+    },
+    {
+      "name": "domain_localhost",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "localhost"
+      },
+      "expected": {
+        "ok": "localhost"
+      }
+    },
+    {
+      "name": "domain_tld_yok",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "com"
+      },
+      "expected": {
+        "error": "Domain TLD içermeli"
+      }
+    },
+    {
+      "name": "domain_bos_etiket",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "a..b"
+      },
+      "expected": {
+        "error": "Domain etiketi geçersiz"
+      }
+    },
+    {
+      "name": "domain_tire",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "-a.com"
+      },
+      "expected": {
+        "error": "Domain etiketi tire ile başlayamaz/bitmez"
+      }
+    },
+    {
+      "name": "domain_alt_cizgi",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "a_b.com"
+      },
+      "expected": {
+        "error": "Domain etiketi geçersiz karakter içeriyor"
+      }
+    },
+    {
+      "name": "domain_crlf",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "a.com\r\nX"
+      },
+      "expected": {
+        "error": "Domain geçersiz karakter içeriyor"
+      }
+    },
+    {
+      "name": "domain_unicode",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "münchen.de"
+      },
+      "expected": {
+        "ok": "münchen.de"
+      }
+    },
+    {
+      "name": "domain_turkce_buyuk_i_birlesik_isaret",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "İstanbul.com"
+      },
+      "expected": {
+        "error": "Domain etiketi geçersiz karakter içeriyor"
+      }
+    },
+    {
+      "name": "domain_uzun_etiket",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.com"
+      },
+      "expected": {
+        "error": "Domain etiketi geçersiz"
+      }
+    },
+    {
+      "name": "domain_cok_uzun",
+      "fn": "sanitize_domain",
+      "args": {
+        "value": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a."
+      },
+      "expected": {
+        "error": "Geçersiz domain"
+      }
+    },
+    {
+      "name": "host_normalize",
+      "fn": "sanitize_hostname",
+      "args": {
+        "value": " Example.COM ",
+        "max_len": 253
+      },
+      "expected": {
+        "ok": "example.com"
+      }
+    },
+    {
+      "name": "host_bolu",
+      "fn": "sanitize_hostname",
+      "args": {
+        "value": "a/b",
+        "max_len": 253
+      },
+      "expected": {
+        "error": "Host geçersiz karakter içeriyor"
+      }
+    },
+    {
+      "name": "host_bos",
+      "fn": "sanitize_hostname",
+      "args": {
+        "value": "",
+        "max_len": 253
+      },
+      "expected": {
+        "error": "Geçersiz host"
+      }
+    },
+    {
+      "name": "irc_nick",
+      "fn": "sanitize_irc_token",
+      "args": {
+        "value": "osiris-bot",
+        "max_len": 64
+      },
+      "expected": {
+        "ok": "osiris-bot"
+      }
+    },
+    {
+      "name": "irc_crlf",
+      "fn": "sanitize_irc_token",
+      "args": {
+        "value": "a\r\nQUIT",
+        "max_len": 64
+      },
+      "expected": {
+        "error": "IRC değerinde geçersiz karakter"
+      }
+    },
+    {
+      "name": "irc_bosluk",
+      "fn": "sanitize_irc_token",
+      "args": {
+        "value": "a b",
+        "max_len": 64
+      },
+      "expected": {
+        "error": "IRC değerinde geçersiz karakter"
+      }
+    },
+    {
+      "name": "irc_uzun",
+      "fn": "sanitize_irc_token",
+      "args": {
+        "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "max_len": 64
+      },
+      "expected": {
+        "error": "IRC değeri çok uzun"
+      }
+    },
+    {
+      "name": "kanal",
+      "fn": "sanitize_channel",
+      "args": {
+        "value": "#osiris"
+      },
+      "expected": {
+        "ok": "#osiris"
+      }
+    },
+    {
+      "name": "kanal_yerel",
+      "fn": "sanitize_channel",
+      "args": {
+        "value": "&yerel"
+      },
+      "expected": {
+        "ok": "&yerel"
+      }
+    },
+    {
+      "name": "kanal_onek_yok",
+      "fn": "sanitize_channel",
+      "args": {
+        "value": "osiris"
+      },
+      "expected": {
+        "error": "Kanal # veya & ile başlamalı"
+      }
+    },
+    {
+      "name": "kanal_virgul",
+      "fn": "sanitize_channel",
+      "args": {
+        "value": "#a,#b"
+      },
+      "expected": {
+        "error": "Kanalda geçersiz karakter"
+      }
+    },
+    {
+      "name": "maske",
+      "fn": "mask_secret",
+      "args": {
+        "value": "abcdef",
+        "keep": 4
+      },
+      "expected": {
+        "ok": "**cdef"
+      }
+    },
+    {
+      "name": "maske_kisa",
+      "fn": "mask_secret",
+      "args": {
+        "value": "ab",
+        "keep": 4
+      },
+      "expected": {
+        "ok": "***"
+      }
+    },
+    {
+      "name": "maske_yok",
+      "fn": "mask_secret",
+      "args": {
+        "value": null,
+        "keep": 4
+      },
+      "expected": {
+        "ok": "***"
+      }
+    },
+    {
+      "name": "maske_unicode",
+      "fn": "mask_secret",
+      "args": {
+        "value": "şifre-çok-gizli",
+        "keep": 4
+      },
+      "expected": {
+        "ok": "***********izli"
+      }
+    }
+  ]
+}

@@ -243,8 +243,28 @@ def run_plugin(case: dict) -> tuple[dict, dict]:
     return _result_dict(result), report
 
 
+# ----------------------------------------------------------------------- security
+def run_security(case: dict) -> dict:
+    """SSRF denetimi + sanitizer'lar; DNS dosyadaki sabit `dns` haritasından (fail-closed)."""
+    import osiris.security as sec
+
+    dns = load(FIXTURES / "security" / "cases.json")["dns"]
+    fn = getattr(sec, case["fn"])
+    args = dict(case["args"])
+    with mock.patch.object(sec, "_host_ips", lambda h: list(dns.get(h, []))):
+        try:
+            if case["fn"] == "assert_safe_url":
+                return {"ok": fn(args["url"], allow_onion=args["allow_onion"])}
+            if case["fn"] == "resolve_safe_ips":
+                return {"ok": fn(args["host"])}
+            value = args.pop("value")
+            return {"ok": fn(value, *args.values())}
+        except ValueError as exc:
+            return {"error": str(exc)}
+
+
 RUNNERS = {"hash": run_hash, "extract": run_extract, "audit": run_audit,
-           "stix": run_stix, "graph": run_graph}
+           "stix": run_stix, "graph": run_graph, "security": run_security}
 
 
 # ---------------------------------------------------------------------- embedding
