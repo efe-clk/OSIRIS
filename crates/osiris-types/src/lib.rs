@@ -5,10 +5,10 @@
 
 pub mod pyval;
 
+use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
 
 /// Plugin yapılandırması (API/DB'den gelen JSON nesnesi).
 pub type Config = Map<String, Value>;
@@ -134,7 +134,8 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
     pub description: String,
-    pub config_schema: BTreeMap<String, FieldSpec>,
+    /// Manifest dosyasındaki sırayla (Python `dict`; hata iletisi ve arayüz alan sırası).
+    pub config_schema: IndexMap<String, FieldSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

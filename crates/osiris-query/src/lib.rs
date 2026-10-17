@@ -6,7 +6,6 @@
 
 use osiris_hash::canonical::py_float_repr;
 use osiris_hash::py_strip;
-use serde_json::Value;
 use sqlx::PgPool;
 
 pub use osiris_db::VALID_ENTITY_TYPES;
@@ -50,27 +49,30 @@ pub fn vector_literal(embedding: &[f64]) -> String {
     format!("[{}]", parts.join(","))
 }
 
-async fn rows(
-    q: sqlx::query::QueryScalar<'_, sqlx::Postgres, String, sqlx::postgres::PgArguments>,
-    pool: &PgPool,
-) -> Result<Vec<Value>, QueryError> {
-    let text = q.fetch_one(pool).await?;
-    Ok(serde_json::from_str(&text).unwrap_or_default())
+type Scalar<'q> = sqlx::query::QueryScalar<'q, sqlx::Postgres, String, sqlx::postgres::PgArguments>;
+
+/// Satırlar: JSON dizi metni (sütun sırası korunur; zaman damgaları `sql_ts!` biçiminde).
+async fn rows(q: Scalar<'_>, pool: &PgPool) -> Result<String, QueryError> {
+    Ok(q.fetch_one(pool).await?)
 }
 
-const FULLTEXT: &str = "SELECT COALESCE(json_agg(t), '[]')::text FROM (\
-    SELECT id::text AS id, title, url, LEFT(cleaned_content, 2000) AS cleaned_content, collected_at \
-    FROM items \
+/// JSON dizi metnindeki satır sayısı.
+pub fn count_rows(text: &str) -> usize {
+    serde_json::from_str::<Vec<serde::de::IgnoredAny>>(text).map_or(0, |v| v.len())
+}
+
+const FULLTEXT: &str = concat!(
+    "SELECT COALESCE(json_agg(t), '[]')::text FROM (\
+    SELECT id::text AS id, title, url, LEFT(cleaned_content, 2000) AS cleaned_content, ",
+    osiris_db::sql_ts!("collected_at"),
+    " AS collected_at FROM items \
     WHERE to_tsvector('simple', COALESCE(cleaned_content,'')) @@ plainto_tsquery('simple', $1) \
     ORDER BY ts_rank(to_tsvector('simple', COALESCE(cleaned_content,'')), plainto_tsquery('simple', $1)) DESC \
-    LIMIT $2) t";
+    LIMIT $2) t"
+);
 
 /// `fulltext_search` (tsvector, `simple` sözlüğü, `ts_rank` sırası).
-pub async fn fulltext_search(
-    pool: &PgPool,
-    query: &str,
-    limit: i64,
-) -> Result<Vec<Value>, QueryError> {
+pub async fn fulltext_search(pool: &PgPool, query: &str, limit: i64) -> Result<String, QueryError> {
     let query = validate_query(query)?;
     let limit = validate_limit(limit)?;
     rows(sqlx::query_scalar(FULLTEXT).bind(query).bind(limit), pool).await
@@ -80,9 +82,17 @@ macro_rules! semantic_sql {
     ($col:literal) => {
         concat!(
             "SELECT COALESCE(json_agg(t), '[]')::text FROM (",
-            "SELECT id::text AS id, title, url, LEFT(cleaned_content, 2000) AS cleaned_content, collected_at, ",
-            "1 - (", $col, " <=> $1::vector) AS similarity FROM items WHERE ", $col, " IS NOT NULL ",
-            "ORDER BY ", $col, " <=> $1::vector LIMIT $2) t"
+            "SELECT id::text AS id, title, url, LEFT(cleaned_content, 2000) AS cleaned_content, ",
+            osiris_db::sql_ts!("collected_at"),
+            " AS collected_at, ",
+            "1 - (",
+            $col,
+            " <=> $1::vector) AS similarity FROM items WHERE ",
+            $col,
+            " IS NOT NULL ",
+            "ORDER BY ",
+            $col,
+            " <=> $1::vector LIMIT $2) t"
         )
     };
 }
@@ -95,7 +105,7 @@ pub async fn semantic_search(
     pool: &PgPool,
     embedding: &[f64],
     limit: i64,
-) -> Result<Vec<Value>, QueryError> {
+) -> Result<String, QueryError> {
     let limit = validate_limit(limit)?;
     if embedding.is_empty() {
         return Err(invalid("embedding boş olamaz"));
@@ -123,7 +133,7 @@ pub async fn entity_search(
     entity_type: &str,
     value: &str,
     limit: i64,
-) -> Result<Vec<Value>, QueryError> {
+) -> Result<String, QueryError> {
     if !VALID_ENTITY_TYPES.contains(&entity_type) {
         let shown = osiris_hash::pystr::py_str_repr(entity_type);
         return Err(QueryError::Invalid(format!("Geçersiz entity_type: {shown}")));
@@ -150,5 +160,7 @@ mod tests {
         assert!(validate_limit(0).is_err());
         assert_eq!(escape_like(r"a%b_c\"), r"a\%b\_c\\");
         assert_eq!(vector_literal(&[0.1, -1.0, 3e-8]), "[0.1,-1.0,3e-08]");
+        assert_eq!(count_rows(r#"[{"a":1}, {"b":[2]}]"#), 2);
+        assert_eq!(count_rows("bozuk"), 0);
     }
 }

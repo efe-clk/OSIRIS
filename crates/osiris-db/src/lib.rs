@@ -11,6 +11,26 @@ use std::time::Duration;
 
 pub use sqlx::Error;
 
+/// Zaman damgası sütununu FastAPI/pydantic JSON biçiminde metne çeviren SQL ifadesi:
+/// UTC, `YYYY-MM-DDTHH:MM:SS[.ffffff]Z` — mikrosaniye sıfırsa kesir yok, değilse tam 6 hane
+/// (PostgreSQL `to_json` sondaki sıfırları atar, pydantic atmaz). NULL korunur.
+#[macro_export]
+macro_rules! sql_ts {
+    ($col:literal) => {
+        concat!(
+            "(to_char((",
+            $col,
+            ") AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') || CASE WHEN ",
+            "extract(microseconds FROM (",
+            $col,
+            "))::bigint % 1000000 = 0 THEN '' ELSE ",
+            "to_char((",
+            $col,
+            ") AT TIME ZONE 'UTC', '.US') END || 'Z')"
+        )
+    };
+}
+
 /// Geçerli varlık türleri (`entity_type` enum'u); diğerleri `custom` olur.
 pub const VALID_ENTITY_TYPES: [&str; 12] = [
     "person",
@@ -33,6 +53,12 @@ pub async fn connect(url: &str) -> Result<PgPool, Error> {
         .acquire_timeout(Duration::from_secs(10))
         .connect(url)
         .await
+}
+
+/// Tembel havuz (API/CLI): DB kapalıyken de süreç başlar; her istek en çok `acquire` bekler
+/// (Python'daki istek başına `connect_timeout` karşılığı).
+pub fn connect_lazy(url: &str, max_connections: u32, acquire: Duration) -> Result<PgPool, Error> {
+    PgPoolOptions::new().max_connections(max_connections).acquire_timeout(acquire).connect_lazy(url)
 }
 
 /// Depolanacak öğe (Python `store()` girdisi).
@@ -255,16 +281,146 @@ pub async fn purge_expired(
             break;
         }
     }
-    let ents = sqlx::query(
-        "DELETE FROM entities e WHERE NOT EXISTS (SELECT 1 FROM item_entities ie WHERE ie.entity_id = e.id)",
-    )
-    .execute(pool)
-    .await?
-    .rows_affected();
+    let ents = purge_orphan_entities(pool).await?;
     if deleted > 0 || ents > 0 {
         tracing::info!(deleted, ents, "Saklama temizliği");
     }
     Ok((deleted, ents))
+}
+
+const ORPHAN_ENTITIES: &str = "DELETE FROM entities e WHERE NOT EXISTS \
+     (SELECT 1 FROM item_entities ie WHERE ie.entity_id = e.id)";
+
+/// `retention.purge_orphan_entities`: hiçbir öğeye bağlı olmayan varlıkları siler.
+pub async fn purge_orphan_entities<'e, E>(executor: E) -> Result<u64, Error>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    Ok(sqlx::query(ORPHAN_ENTITIES).execute(executor).await?.rows_affected())
+}
+
+// ------------------------------------------------------------------------- denetim (R6)
+
+/// Eklenen denetim kaydının zincir bilgisi.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuditAppend {
+    pub prev_hash: String,
+    pub hash: String,
+    pub chain_version: i64,
+}
+
+/// `osiris.audit.append_audit` — append-only, hash zincirli (SOZLESME §2). Danışma kilidi
+/// zincirin eşzamanlı yazıcılarla çatallanmasını önler; migration 003 yoksa v1 yazılır.
+pub async fn append_audit(
+    pool: &PgPool,
+    user_id: Option<&str>,
+    action: &str,
+    resource: Option<&str>,
+    detail: &osiris_hash::Json,
+) -> Result<AuditAppend, Error> {
+    use osiris_hash::audit::{CURRENT_CHAIN_VERSION, GENESIS, canonical_payload, chain_hash};
+    use osiris_hash::canonical::{jcs_safe, py_dumps};
+    use osiris_hash::{Json, truncate_chars};
+
+    let protocol = |m: &str| Error::Protocol(m.to_owned());
+    let n = action.chars().count();
+    if n == 0 || n > 200 {
+        return Err(protocol("action 1-200 karakter olmalı"));
+    }
+    if resource.is_some_and(|r| r.chars().count() > 500) {
+        return Err(protocol("resource çok uzun"));
+    }
+    // _normalize: kesme önce; nesne olmayan ayrıntı {"value": …} olur
+    let user_id = truncate_chars(user_id.unwrap_or(""), 200);
+    let resource = truncate_chars(resource.unwrap_or(""), 500);
+    let detail = match detail {
+        d if d.is_falsy() => Json::Object(Vec::new()), // `detail or {}`
+        Json::Object(_) => jcs_safe(detail),
+        other => Json::Object(vec![("value".to_owned(), jcs_safe(other))]),
+    };
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('osiris_audit_chain'))")
+        .execute(&mut *tx)
+        .await?;
+    let has_version: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns \
+         WHERE table_name = 'audit_logs' AND column_name = 'chain_version')",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let version = if has_version { CURRENT_CHAIN_VERSION } else { 1 };
+    let prev: Option<String> =
+        sqlx::query_scalar("SELECT hash::text FROM audit_logs ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await?;
+    let prev_hash = prev.filter(|p| !p.is_empty()).unwrap_or_else(|| GENESIS.to_owned());
+    let payload = canonical_payload(Some(user_id), action, Some(resource), Some(&detail), version)
+        .map_err(|e| protocol(&e.0))?;
+    let digest = chain_hash(Some(&prev_hash), &payload);
+    let stored_prev = (prev_hash != GENESIS).then_some(prev_hash.as_str());
+    let q = if has_version {
+        sqlx::query(
+            "INSERT INTO audit_logs (user_id, action, resource, detail, prev_hash, hash, chain_version) \
+             VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)",
+        )
+    } else {
+        sqlx::query(
+            "INSERT INTO audit_logs (user_id, action, resource, detail, prev_hash, hash) \
+             VALUES ($1, $2, $3, $4::jsonb, $5, $6)",
+        )
+    };
+    let q = q
+        .bind(user_id)
+        .bind(action)
+        .bind(resource)
+        .bind(py_dumps(&detail))
+        .bind(stored_prev)
+        .bind(&digest);
+    let q = if has_version { q.bind(version as i32) } else { q };
+    q.execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(AuditAppend { prev_hash, hash: digest, chain_version: version })
+}
+
+// ---------------------------------------------------------------------- graf kenarları
+
+/// `GraphEngine.load_from_db`: en son görülen kenarlar (`limit` 1–100 000).
+pub async fn graph_edges(
+    pool: &PgPool,
+    limit: i64,
+) -> Result<Vec<(String, String, String, f64)>, Error> {
+    let rows = sqlx::query(
+        "SELECT source_name, target_name, relation_type, weight FROM graph_edges \
+         ORDER BY last_seen_at DESC LIMIT $1",
+    )
+    .bind(limit.clamp(1, 100_000))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.get(0), r.get(1), r.get(2), r.get(3))).collect())
+}
+
+/// `GraphEngine.save_to_db` tek kenar için: upsert, `evidence_count` artar.
+pub async fn upsert_graph_edge(
+    pool: &PgPool,
+    source: &str,
+    target: &str,
+    relation_type: &str,
+    weight: f64,
+) -> Result<(), Error> {
+    use osiris_hash::truncate_chars;
+    sqlx::query(
+        "INSERT INTO graph_edges (source_name, target_name, relation_type, weight, last_seen_at) \
+         VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (source_name, target_name, relation_type) \
+         DO UPDATE SET weight = EXCLUDED.weight, evidence_count = graph_edges.evidence_count + 1, \
+         last_seen_at = NOW()",
+    )
+    .bind(truncate_chars(source, 500))
+    .bind(truncate_chars(target, 500))
+    .bind(truncate_chars(relation_type, 100))
+    .bind(weight)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Vektörü olmayan öğeler (`--reembed`).
