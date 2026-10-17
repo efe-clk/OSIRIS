@@ -6,10 +6,9 @@
 //! `OSIRIS_REDIS_URL`, `OSIRIS_EMBEDDING_MODEL`, `OSIRIS_MODEL_DIR`, `OSIRIS_NER`,
 //! `OSIRIS_RETENTION_DAYS`, `OSIRIS_RETENTION_INTERVAL`, `OSIRIS_PIPELINE_CONSUMER`).
 
-mod collector;
-
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use osiris_collector as collector;
 use osiris_pipeline::{Pipeline, stream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -235,7 +234,8 @@ async fn main() -> anyhow::Result<()> {
             let cfg: serde_json::Value =
                 serde_json::from_str(&config).context("--config JSON nesnesi olmalı")?;
             let cfg = cfg.as_object().cloned().context("--config JSON nesnesi olmalı")?;
-            let redis = if enqueue { Some(redis_con(&cli.redis_url).await?) } else { None };
+            let redis =
+                if enqueue { Some(collector::redis_manager(&cli.redis_url)?) } else { None };
             let mgr = collector::Manager::new(
                 osiris_plugin::real::host(),
                 redis,
@@ -246,7 +246,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Cmd::Collector { scheduler, refresh } => {
             let on = matches!(scheduler.to_lowercase().as_str(), "on" | "1" | "true");
-            let redis = Some(redis_con(&cli.redis_url).await?);
+            let redis = Some(collector::redis_manager(&cli.redis_url)?);
             let mgr = Arc::new(collector::Manager::new(
                 osiris_plugin::real::host(),
                 redis,

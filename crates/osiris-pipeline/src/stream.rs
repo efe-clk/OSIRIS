@@ -8,39 +8,13 @@ use redis::Value as RV;
 use redis::aio::MultiplexedConnection;
 use sqlx::PgPool;
 
-pub const STREAM: &str = "osiris:stream:raw_items";
+pub use osiris_queue::{FIELD, STREAM, enqueue, stream_maxlen};
+
 pub const DEAD_LETTER: &str = "osiris:stream:raw_items:dead";
 pub const GROUP: &str = "osiris-pipeline";
 pub const LEGACY_LIST: &str = "osiris:raw_items";
-pub const FIELD: &str = "data";
 pub const MAX_DELIVERIES: i64 = 5;
 pub const CLAIM_IDLE_MS: u64 = 300_000;
-
-/// `OSIRIS_STREAM_MAXLEN` (1000–10 000 000; varsayılan 200 000).
-pub fn stream_maxlen() -> i64 {
-    std::env::var("OSIRIS_STREAM_MAXLEN")
-        .ok()
-        .and_then(|v| v.trim().parse::<i64>().ok())
-        .map_or(200_000, |v| v.clamp(1_000, 10_000_000))
-}
-
-/// `XADD stream MAXLEN ~ n * data <payload>`
-pub async fn enqueue(
-    con: &mut MultiplexedConnection,
-    stream: &str,
-    payload: &str,
-) -> redis::RedisResult<String> {
-    redis::cmd("XADD")
-        .arg(stream)
-        .arg("MAXLEN")
-        .arg("~")
-        .arg(stream_maxlen())
-        .arg("*")
-        .arg(FIELD)
-        .arg(payload)
-        .query_async(con)
-        .await
-}
 
 fn as_str(v: &RV) -> Option<String> {
     match v {

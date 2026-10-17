@@ -17,6 +17,7 @@ ort.workspace = true
 osiris-db.workspace = true
 osiris-extract.workspace = true
 osiris-hash.workspace = true
+osiris-queue.workspace = true
 osiris-types.workspace = true
 redis.workspace = true
 regex.workspace = true

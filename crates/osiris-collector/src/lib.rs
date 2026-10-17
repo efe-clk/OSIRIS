@@ -1,4 +1,5 @@
-//! Collector servisi (R5) — Python `CollectorManager.run_collection` + gerçek cron zamanlaması.
+//! Collector yöneticisi (R5; R6'da kütüphane) — Python `CollectorManager.run_collection` +
+//! gerçek cron zamanlaması. `osiris-server` (collector servisi, API) ve `osiris` CLI paylaşır.
 //!
 //! - Görev yapılandırması API ile aynı kurulur: `metadata.config` + `source_id`; kaynağın
 //!   `url`'si `url`/`feed_url`/`endpoint` alanlarına (yoksa) yazılır.
@@ -6,16 +7,17 @@
 //! - Çökme izolasyonu: her toplama ayrı `tokio::spawn`; panik ya da `PluginCrash` →
 //!   `plugin hatası: …` (yönetici düşmez).
 //! - Öğeler kuyruk mesajı olarak Stream'e (`MAXLEN ~`), 512 000 bayttan büyükler atlanır.
+//!   Redis bağlantısı tembeldir ve kopunca yenilenir ([`redis_manager`]); yazma hatası →
+//!   `kuyruk hatası: …` (Python ile aynı).
 //! - Kaynak sağlığı: `sources` + `source_metrics`.
 //! - Zamanlama (E2): `sources.schedule` (5 alanlı standart cron, UTC; haftanın günü 0/7 =
 //!   Pazar). **Varsayılan kapalı**: `OSIRIS_SCHEDULER=on` ile açılır (kullanıcı kararı).
 
 use chrono::{DateTime, Utc};
 use osiris_db::ScheduledSource;
-use osiris_pipeline::stream;
 use osiris_plugin::{Collector, Host};
 use osiris_types::{CollectionResult, Config, QueueMessage};
-use redis::aio::MultiplexedConnection;
+use redis::aio::{ConnectionManager, ConnectionManagerConfig};
 use serde_json::Value;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
@@ -36,8 +38,20 @@ static CRON_PART: LazyLock<regex::Regex> =
 pub struct Manager {
     pub plugins: HashMap<String, Arc<dyn Collector>>,
     pub host: Host,
-    pub redis: Option<MultiplexedConnection>,
+    pub redis: Option<ConnectionManager>,
     pub pool: Option<PgPool>,
+}
+
+/// Tembel, kendini yenileyen Redis bağlantısı (ilk komutta bağlanır; Redis kapalıysa komut
+/// birkaç saniyede hata verir, süreç düşmez). Python `redis.Redis.from_url` ile aynı davranış.
+pub fn redis_manager(url: &str) -> anyhow::Result<ConnectionManager> {
+    let client =
+        redis::Client::open(url).map_err(|e| anyhow::anyhow!("Redis URL geçersiz: {e}"))?;
+    let config = ConnectionManagerConfig::new()
+        .set_connection_timeout(Some(Duration::from_secs(3)))
+        .set_response_timeout(Some(Duration::from_secs(5)))
+        .set_number_of_retries(2);
+    Ok(ConnectionManager::new_lazy_with_config(client, config)?)
 }
 
 /// API'nin görev yapılandırması (`main.py` collect_source).
@@ -69,7 +83,7 @@ pub fn parse_cron(expr: &str) -> Result<croner::Cron, String> {
 }
 
 impl Manager {
-    pub fn new(host: Host, redis: Option<MultiplexedConnection>, pool: Option<PgPool>) -> Self {
+    pub fn new(host: Host, redis: Option<ConnectionManager>, pool: Option<PgPool>) -> Self {
         let plugins = osiris_plugins::all().into_iter().map(|p| (p.id().to_owned(), p)).collect();
         Self { plugins, host, redis, pool }
     }
@@ -121,6 +135,13 @@ impl Manager {
                 _ => None,
             };
             let mut enqueued = 0;
+            if self.redis.is_none() && !result.items.is_empty() {
+                return Ok(CollectionResult {
+                    success: false,
+                    error: Some("kuyruk hatası: Redis yapılandırılmamış".into()),
+                    ..result
+                });
+            }
             if let Some(con) = &self.redis {
                 let mut con = con.clone();
                 for item in &result.items {
@@ -139,7 +160,9 @@ impl Manager {
                         tracing::warn!("{plugin_id}: öğe çok büyük, atlandı");
                         continue;
                     }
-                    if let Err(e) = stream::enqueue(&mut con, stream::STREAM, &payload).await {
+                    if let Err(e) =
+                        osiris_queue::enqueue(&mut con, osiris_queue::STREAM, &payload).await
+                    {
                         tracing::error!("{plugin_id}: kuyruğa yazılamadı: {e}");
                         result = CollectionResult {
                             success: false,
