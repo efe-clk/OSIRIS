@@ -2,7 +2,8 @@
 
 # OSIRIS API Başvurusu
 
-> Sürüm: 0.2.0 · İnteraktif doküman: `GET /docs` (Swagger UI), Nginx arkasında `/api/docs`
+> Sürüm: 0.2.0 · Uygulama: Rust (`osiris-server api`, R6) — yerini aldığı Python API ile aynı sözleşme (`tests/contract/`)
+> İnteraktif doküman: `GET /docs` (Swagger UI), Nginx arkasında `/api/docs`; OpenAPI 3: `GET /openapi.json`
 > Taban URL (üretim): `https://<sunucu>:8443/api` · Doğrudan (dev): `http://localhost:8001`
 
 Tüm uçlar JSON döner. Zamanlar ISO-8601 UTC'dir. ID'ler UUID dizgisidir.
@@ -246,18 +247,27 @@ curl -H "X-API-Key: <a>" https://<sunucu>:8443/api/stats
 | 403 | Kimlik geçerli, rol yetersiz |
 | 404 | Bilinmeyen plugin/kaynak/öğe/anahtar veya bozuk UUID |
 | 409 | Kaynak devre dışı (`/sources/{id}/collect`) |
-| 413 | Config nesnesi çok büyük |
+| 413 | Config nesnesi çok büyük ya da istek gövdesi 5 MiB üstü |
 | 422 | Şema ihlali (ayrıntı `detail` dizisinde) |
+| 429 | Kimlik başına kota aşıldı (`OSIRIS_API_RATE_PER_MIN`) |
 | 500 | Sunucu/DB hatası (iç detay sızmaz) |
 | 502 | Plugin çalıştı ama başarısız oldu (`detail` plugin mesajını taşır) |
 | 503 | Özellik yapılandırılmamış (`OSIRIS_JWT_SECRET` olmadan `/auth/token`) |
 
 ## 15. Hız Sınırları
 
-Nginx'te zorunlu: `/api/*` üzerinde `10 istek/sn` (taşma 20). Anahtar başına kota henüz yok — büyük toplu işlerde `/collect/batch` (≤10) kullanın ve istemcide tempo koyun.
+İki katman:
+
+- **Nginx** (IP başına): `/api/*` üzerinde `10 istek/sn` (taşma 20).
+- **API** (kimlik başına — operatör anahtarı, DB anahtarı kullanıcısı ya da JWT öznesi): dakikada `OSIRIS_API_RATE_PER_MIN` istek (varsayılan 600, `0` = kapalı); aşılınca `429` `{"detail":"İstek kotası aşıldı"}`.
+
+Büyük toplu işlerde `/collect/batch` (≤10) kullanın ve istemcide tempo koyun.
+
+**Ölçümler:** Prometheus metin biçimi ayrı dinleyicide, `OSIRIS_METRICS_ADDR` (compose: `osiris-api:9464/metrics`, yalnızca iç ağ — `/api/` altında değil). Etiketler rota şablonudur; yol değerleri ve sorgu dizgeleri asla yazılmaz.
 
 ## 16. Değişiklikler
 
+- **Yayımlanmadı (Rust R6)** — API Rust'ta (axum) yeniden yazıldı, sözleşme değişmedi; kimlik başına kota (`429`); `/metrics` (ayrı dinleyici); yapılandırılmış JSON log (`OSIRIS_LOG_FORMAT=json`); `/openapi.json`; zaman damgaları FastAPI biçiminde (`…Z`). `/graph/relation`'da kırpınca boş kalan kimlik artık `500` yerine `400` döner.
 - **Yayımlanmadı (Rust R2)** — KVKK: `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run`, kaynaklarda `retention_days`; `OSIRIS_API_KEY` olmadan başlamaz; JWT sırrı API anahtarına düşmez (`/auth/token` → 503); audit zinciri v2 (RFC 8785).
 - **0.2.0** — listelerde sayfalama + filtreler; `GET /items/{id}` (+varlıklar), `GET /entities/top`, `POST /collect/batch`; UUID-güvenli id yolları; OpenAPI etiket/özetleri; `q` filtresinde LIKE-joker kaçışı.
 - **0.1.x** — sources CRUD + çalıştırma tetikleme, saved-queries CRUD, `/alerts/test`, `/reports/markdown`, `/stats`, `/items/recent`, JWT + RBAC, `/auth/keys`.

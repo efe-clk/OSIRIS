@@ -54,14 +54,14 @@ Katmanlar, veri akışı ve güvenlik modeli için bkz. [docs/ARCHITECTURE.tr.md
 |-------|-----|-----|-------|
 | `crates/` | Rust | Ortak çekirdek: SSRF denetimi, `content_hash` + denetim zinciri, regex varlık çıkarma — Python servisleri `osiris_native` (PyO3) üzerinden kullanır | ✅ R4 (Rust geçişi sürüyor — [plan](docs/RUST_GECIS_PLANI.md)) |
 | `osiris-collector` | Python | Toplama plugin'lerini yönetir | ✅ Çalışıyor |
-| `osiris-server` | Rust | Kuyruk işçisi, collector zamanlayıcısı ve 11 plugin (Python işçisinin yerine) | ✅ R5 (varsayılan `worker` profili) |
+| `osiris-server` | Rust | REST API (`api`, JWT + RBAC + kota), kuyruk işçisi, collector zamanlayıcısı ve 11 plugin | ✅ R6 API (`api` profili), R5 işçi (`worker` profili) |
 | `osiris-pipeline` | Python | Temizleme, NER, sınıflandırma, embedding, depolama | ✅ Yedek işçi (`worker-python` profili) |
-| `osiris-query` | Python | Tam metin + semantik arama | ✅ Çalışıyor |
-| `osiris-graph` | Python | Varlık ilişki grafı (kalıcı) | ✅ Çalışıyor |
-| `osiris-alert` | Python | Uyarı + anomali tespiti | ✅ Çalışıyor |
-| `osiris-report` | Python | Rapor üretimi ve dışa aktarım | ✅ MD/HTML/JSON/CSV/STIX |
-| `osiris-api` | Python | REST API (JWT + RBAC) | ✅ Çalışıyor |
-| `osiris-cli` | Python | Komut satırı arayüzü | ✅ Çalışıyor |
+| `osiris-query` | Python → Rust | Tam metin + semantik arama (`crates/osiris-query`) | ✅ R6 Rust |
+| `osiris-graph` | Python → Rust | Varlık ilişki grafı, merkezilik, CNM topluluk (`crates/osiris-graph`) | ✅ R6 Rust |
+| `osiris-alert` | Python → Rust | Uyarı + anomali tespiti, webhook/Telegram/e-posta (`crates/osiris-alert`) | ✅ R6 Rust |
+| `osiris-report` | Python → Rust | Rapor üretimi: MD/HTML/JSON/CSV/STIX (`crates/osiris-report`) | ✅ R6 Rust |
+| `osiris-api` | Python | REST API (JWT + RBAC) | ✅ Yedek (`api-python` profili; yerini `osiris-server api` aldı) |
+| `osiris-cli` | Python → Rust | Komut satırı arayüzü — `osiris` artık Rust (`crates/osiris-cli`), Python sürümü `osiris-py` | ✅ R6 Rust |
 | `osiris-web-ui` | React/TS | Tarayıcı arayüzü | Temel ekranlar |
 | `osiris-sdk` | Python | Paylaşılan SDK (plugin, model, güvenlik, denetim) | ✅ Çalışıyor |
 

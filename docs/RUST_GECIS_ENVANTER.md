@@ -113,7 +113,7 @@ Kaynak: `osiris-report/osiris_report/generator.py:134-209`.
 | E8 | username-search'te tempo sınırı yok. Yalnızca `workers` (1-20 thread) ve `timeout` ayarlanabiliyor | `plugins/username-search/collector.py:167-177` | R2 |
 | E9 | Qt ve Tauri istemcileri repoda **yok** (yalnızca dokümanda "planlı") | README, ARCHITECTURE | K8'in pratik etkisi yok |
 | E10 | R1 doküman maddeleri doğrulandı: `aşJRımlı` (TEKNIK_DOKUMAN.tr.md:85), `OSIRIS_Technical_Document.md` referansı (:9), `[P2P]` (:117), "zamanlama C++ core'da" (:133), API taban URL'si `http://<sunucu>/api` (API.tr.md:6) | — | R1 |
-| E11 | Bazı fonksiyonlar API'ye açık değil: `semantic_search`, `centrality`, `communities`, `generate_stix/html/csv/json`, `AlertManager.check_anomaly`, `export_graphml/gexf`. R6'da "tüm uçlar" taşınırken bunlar uç olarak eklenecek mi, yoksa yalnızca kütüphane olarak mı kalacak, karar verilmeli | §3.2 | R6 |
+| E11 | Bazı fonksiyonlar API'ye açık değil: `semantic_search`, `centrality`, `communities`, `generate_stix/html/csv/json`, `AlertManager.check_anomaly`, `export_graphml/gexf`. R6'da "tüm uçlar" taşınırken bunlar uç olarak eklenecek mi, yoksa yalnızca kütüphane olarak mı kalacak, karar verilmeli | §3.2 | R6 — **karar (2026-10-17): yalnız kütüphane**, uç eklenmedi |
 | E12 | `pandas` pipeline bağımlılığı ama hiçbir yerde import edilmiyor | `osiris-pipeline/pyproject.toml` | R3 temizliği |
 
 ---

@@ -2,7 +2,8 @@
 
 # OSIRIS API Reference
 
-> Version: 0.2.0 · Interactive docs: `GET /docs` (Swagger UI) behind Nginx at `/api/docs`
+> Version: 0.2.0 · Implementation: Rust (`osiris-server api`, R6) — same contract as the Python API it replaces (`tests/contract/`)
+> Interactive docs: `GET /docs` (Swagger UI) behind Nginx at `/api/docs`; OpenAPI 3: `GET /openapi.json`
 > Base URL (production): `https://<host>:8443/api` · Direct (dev): `http://localhost:8001`
 
 All endpoints return JSON. Timestamps are ISO-8601 UTC. IDs are UUID strings.
@@ -246,18 +247,27 @@ curl -H "X-API-Key: <k>" https://<host>:8443/api/stats
 | 403 | Valid credential, insufficient role |
 | 404 | Unknown plugin/source/item/key, or malformed UUID |
 | 409 | Source disabled (`/sources/{id}/collect`) |
-| 413 | Config object too large |
+| 413 | Config object too large, or request body over 5 MiB |
 | 422 | Schema violation (see `detail` array) |
+| 429 | Per-identity quota exceeded (`OSIRIS_API_RATE_PER_MIN`) |
 | 500 | Server/DB failure (no internals leaked) |
 | 502 | Plugin ran but failed (`detail` carries the plugin message) |
 | 503 | Feature not configured (`/auth/token` without `OSIRIS_JWT_SECRET`) |
 
 ## 15. Rate Limits
 
-Enforced at Nginx: `10 req/s` (burst 20) on `/api/*`. No per-key quotas yet — front large batch jobs with `/collect/batch` (≤10) and client-side pacing.
+Two layers:
+
+- **Nginx** (per IP): `10 req/s` (burst 20) on `/api/*`.
+- **API** (per identity — operator key, DB key user or JWT subject): `OSIRIS_API_RATE_PER_MIN` requests per minute (default 600, `0` = off); exceeding it returns `429` `{"detail":"İstek kotası aşıldı"}`.
+
+Front large batch jobs with `/collect/batch` (≤10) and client-side pacing.
+
+**Metrics:** Prometheus text format on a separate listener, `OSIRIS_METRICS_ADDR` (compose: `osiris-api:9464/metrics`, internal network only — not under `/api/`). Labels are route templates, never path values or query strings.
 
 ## 16. Changelog
 
+- **Unreleased (Rust R6)** — API reimplemented in Rust (axum) with an unchanged contract; per-identity quota (`429`); `/metrics` (separate listener); structured JSON logs (`OSIRIS_LOG_FORMAT=json`); `/openapi.json`; timestamps keep the FastAPI format (`…Z`). `/graph/relation` with an id that is blank after trimming now returns `400` instead of `500`.
 - **Unreleased (Rust R2)** — KVKK: `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run`, `retention_days` on sources; refuses to start without `OSIRIS_API_KEY`; JWT secret has no API-key fallback (`/auth/token` → 503); audit chain v2 (RFC 8785).
 - **0.2.0** — pagination + filters on lists; `GET /items/{id}` (+entities), `GET /entities/top`, `POST /collect/batch`; UUID-safe id paths; OpenAPI tags/summaries; LIKE-wildcard escaping on `q`.
 - **0.1.x** — sources CRUD + collect trigger, saved-queries CRUD, `/alerts/test`, `/reports/markdown`, `/stats`, `/items/recent`, JWT + RBAC, `/auth/keys`.

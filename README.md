@@ -54,14 +54,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for layers, data flow, and the 
 |--------|----------|------|--------|
 | `crates/` | Rust | Shared core: SSRF guard, `content_hash` + audit chain, regex entity extraction — used by the Python services through `osiris_native` (PyO3) | ✅ R4 (Rust migration in progress — [plan](docs/RUST_GECIS_PLANI.md)) |
 | `osiris-collector` | Python | Manages collection plugins | ✅ Working |
-| `osiris-server` | Rust | Queue worker, collector scheduler and the 11 plugins (replaces the Python worker) | ✅ R5 (default `worker` profile) |
+| `osiris-server` | Rust | REST API (`api`, JWT + RBAC + quotas), queue worker, collector scheduler and the 11 plugins | ✅ R6 API (`api` profile), R5 worker (`worker` profile) |
 | `osiris-pipeline` | Python | Cleaning, NER, classification, embedding, storage | ✅ Fallback worker (`worker-python` profile) |
-| `osiris-query` | Python | Full-text + semantic search | ✅ Working |
-| `osiris-graph` | Python | Entity relationship graph (persistent) | ✅ Working |
-| `osiris-alert` | Python | Alerts + anomaly detection | ✅ Working |
-| `osiris-report` | Python | Report generation and export | ✅ MD/HTML/JSON/CSV/STIX |
-| `osiris-api` | Python | REST API (JWT + RBAC) | ✅ Working |
-| `osiris-cli` | Python | Command-line interface | ✅ Working |
+| `osiris-query` | Python → Rust | Full-text + semantic search (`crates/osiris-query`) | ✅ R6 Rust |
+| `osiris-graph` | Python → Rust | Entity relationship graph, centrality, CNM communities (`crates/osiris-graph`) | ✅ R6 Rust |
+| `osiris-alert` | Python → Rust | Alerts + anomaly detection, webhook/Telegram/e-mail (`crates/osiris-alert`) | ✅ R6 Rust |
+| `osiris-report` | Python → Rust | Report generation: MD/HTML/JSON/CSV/STIX (`crates/osiris-report`) | ✅ R6 Rust |
+| `osiris-api` | Python | REST API (JWT + RBAC) | ✅ Fallback (`api-python` profile; replaced by `osiris-server api`) |
+| `osiris-cli` | Python → Rust | Command-line interface — `osiris` is now Rust (`crates/osiris-cli`), Python version is `osiris-py` | ✅ R6 Rust |
 | `osiris-web-ui` | React/TS | Browser interface | Basic screens |
 | `osiris-sdk` | Python | Shared SDK (plugins, models, security, audit) | ✅ Working |
 

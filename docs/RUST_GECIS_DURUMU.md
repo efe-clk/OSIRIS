@@ -10,7 +10,8 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
 | R3 — Geçiş dostu altyapı | ✅ Tamamlandı | `master` |
 | R4 — Rust iskeleti + PyO3 köprüsü | ✅ Tamamlandı | `master` |
 | R5 — Veri katmanı Rust'ta | ✅ Tamamlandı (canlı geçiş operatörde) | `master` |
-| R6–R7 | ⏳ Başlamadı | — |
+| R6 — API, CLI ve analiz katmanı Rust'ta | ✅ Tamamlandı (canlı geçiş operatörde) | `master` |
+| R7 — Temizlik ve sadeleştirme | ⏳ Başlamadı | — |
 
 ## Kararlar (kullanıcı onayı, 2026-10-16)
 
@@ -308,6 +309,103 @@ collector, pipeline). Açık karar maddesi: rest-api ve shodan plugin'lerinin `r
 7. rest-api/shodan kaynakları varsa: geçişten sonraki ilk toplamada aynı kayıtlar yeni
    (JSON) `content_hash` ile bir kez daha saklanır; saklama süresiyle temizlenir.
 
-**Sıradaki:** R6 — API, CLI ve analiz katmanı Rust'ta (`osiris-query`, `osiris-graph`,
-`osiris-alert`, `osiris-report`, `osiris-server` axum API'si). Açık karar maddesi: E11
-(API'ye açık olmayan fonksiyonlar uç olarak eklenecek mi?).
+**Sıradaki:** R6 (aşağıda).
+
+## R6 (2026-10-17)
+
+**Karar (E11, kullanıcı onayı):** API'ye açık olmayan fonksiyonlar (`semantic_search`, `centrality`,
+`communities`, STIX/HTML/CSV/JSON raporları, `check_anomaly`, GraphML/GEXF) **yalnızca kütüphane**
+olarak Rust'a taşındı; yeni uç eklenmedi. API, Python ile birebir aynı 26 uçtan oluşur.
+
+**Yeni crate'ler**
+- `osiris-queue` (kuyruk üreticisi: `XADD`), `osiris-collector` (R5'teki yönetici `osiris-server`'dan
+  kütüphaneye taşındı; API, CLI ve collector servisi paylaşır).
+- `osiris-graph`: networkx `Graph` semantiği (yönsüz, çift başına tek kenar, ekleme sırası), derece
+  merkeziliği, **CNM topluluk tespiti birebir port** (networkx 3.6.1 `MappedQueue` yerine aynı tam
+  sıralamalı küme), `/graph` gövdesi, GraphML (bayt bayt), GEXF. Fixture 15 durum: karate kulübü ve
+  60/120/200 düğümlü tohumlu rastgele graflar dahil.
+- `osiris-report`: Markdown/HTML (Jinja2 autoescape eşdeğeri), JSON, CSV (formül koruması, `\r\n`,
+  QUOTE_MINIMAL; dizin kilidi + dışarı çıkan sembolik bağ reddi), STIX 2.1 (bayt bayt). Yeni fixture
+  `fixtures/report`.
+- `osiris-alert`: eşleşme, sessize alma, z-skor anomali, Redis `PUBLISH`; webhook, Telegram, e-posta
+  (SMTP, `lettre`) işleyicileri (`OSIRIS_ALERT_*`; Python'daki gibi hiçbir servise bağlı değil).
+  Yeni fixture `fixtures/alert`.
+- `osiris-query`: tam metin, pgvector semantik, varlık araması (Python SQL'i).
+- `osiris-cli` (ikili `osiris`): `status`, `plugins`, `collect`; çıkış kodları 0/1/2. Python CLI'ın
+  betiği `osiris-py` oldu.
+- `osiris-db` ekleri: denetim zinciri yazımı (`append_audit`: danışma kilidi, v1/v2, `_normalize`
+  kuralları), graf kenarları, tembel havuz, yetim varlık temizliği, `sql_ts!`.
+
+**API (`osiris-server api`, axum)**
+- Uçlar, durum kodları, hata iletileri, sayfalama sınırları, kontrol sırası (bozuk JSON → 422
+  kimlikten önce; alan doğrulaması kimlikten sonra), kimlik sırası (operatör anahtarı → Bearer JWT →
+  DB anahtarı), RBAC, CORS izin listesi, `{"detail": …}` gövdeleri Python ile aynı. Pydantic "lax"
+  dönüşümleri (`"20"` → 20, `"yes"` → true) korunur.
+- Yeni: kimlik başına kota (`governor`, `OSIRIS_API_RATE_PER_MIN`, varsayılan 600/dk, 429), gövde
+  tavanı 5 MiB (413), Prometheus `/metrics` ayrı dinleyicide (`OSIRIS_METRICS_ADDR`; etiketler rota
+  şablonu), yapılandırılmış JSON log (`OSIRIS_LOG_FORMAT=json`), OpenAPI (`/openapi.json`, utoipa) +
+  `/docs`, SIGTERM ile düzgün kapanış, `osiris-server health` (konteyner sağlık denetimi).
+- Zaman damgaları FastAPI/pydantic biçiminde yazılır (`2026-10-17T16:39:00.779110Z`; mikrosaniye
+  sıfırsa kesirsiz) — PostgreSQL `to_json` hem `+00:00` yazar hem sondaki sıfırları atar; `sql_ts!`
+  bunu SQL'de düzeltir.
+- Denetim kayıtları Rust'ta yazılır; Python `verify_chain` zinciri doğruladı (21/21, v2).
+
+**Doğrulama**
+- `tests/contract/` **değiştirilmeden** Rust API'ye karşı 144/144 (yıkıcı testler dahil); Python
+  API'ye karşı da yeşil kalıyor.
+- Yeni `tests/parity/` (R6–R7 arası): aynı 71 köşe durum isteği + veri dolu 13 okuma ucunun gövdesi
+  iki API'de birebir aynı; JWT iki yönde geçerli (Python'un jetonu Rust'ta, Rust'ınki Python'da).
+- Rust: fixture testleri (graph, report, stix, alert), API birim testleri (DB'siz: kimlik matrisi,
+  doğrulama sırası, 404/405, 413, 429, CORS, başlatma denetimi), CLI çıkış kodları.
+- **n8n:** iş akışı n8n 1.114.4'te içe aktarılıp çalıştırıldı → Rust API: `/collect` 200 (gerçek
+  RSS, 20 öğe kuyruğa yazıldı), `/search` 200.
+- Web UI: kullandığı tüm uçlar sözleşme + eşdeğerlik testlerinde; gövde biçimleri aynı (kod
+  değişikliği gerekmedi).
+
+**Bulgular**
+- **E16 (işlev):** `deploy/n8n/osiris-workflow.json` hiçbir API'de çalışmıyordu: `config` JSON dizesi
+  olarak gidiyordu (422), arama gövdesindeki `{{ $json.query }}` başında `=` olmadığı için düz metin
+  gidiyordu, ifadedeki `}}` ifadeyi erken kapatıyordu ve zamanlayıcının çıktısında `query`/`feed_url`
+  yoktu. İş akışı `Zamanlayıcı → Ayarlar → Topla → Ara` olarak yeniden yazıldı (JSON gövde, 15 dk);
+  compose'a `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` eklendi.
+- **R5 gizli hatası:** collector servisi Redis'e `MultiplexedConnection` ile bağlanıyordu; Redis
+  yeniden başlarsa kuyruğa yazma kalıcı olarak başarısız olurdu. Artık tembel, kendini yenileyen
+  `ConnectionManager` (API ve CLI de aynı).
+- Manifest `config_schema` sırası Rust'ta alfabetikti (`BTreeMap`): zorunlu alan hata iletisinde ve
+  `/plugins` gövdesinde alan sırası Python'dan farklıydı (arayüz form sırası). `IndexMap` ile manifest
+  sırası korunuyor.
+
+**Plandan / Python'dan sapmalar**
+- `/graph/relation` yalnızca eklenen kenarı kalıcılaştırır. Python her çağrıda bellekteki **tüm**
+  kenarları upsert edip hepsinin `evidence_count`'unu artırıyordu.
+- Graf DB'den yüklenemezse sonraki istekte yeniden denenir (Python başarısızlığı da "yüklendi" sayıp
+  süreç yeniden başlayana kadar boş graf gösteriyordu).
+- `/graph/relation`: kırpınca boş kalan kimlik 400 (Python: düz metin 500); düğüm sınırı 503.
+- 422 listelerinde kayıt biçimi pydantic'e benzer ama ileti metinleri birebir değil (sözleşme yalnızca
+  `detail` varlığını ve iç ayrıntı sızmamasını ister).
+- Bazı gövdelerde (`/graph`, `/collect` metadata, `/alerts/test`) nesne anahtarları alfabetik sıralı;
+  liste uçları sütun sırasını korur. İstemciler anahtar sırasına bağlı değil.
+- `/docs` OpenAPI'yi göreli yoldan yükler (Nginx `/api/docs` altında da çalışır; FastAPI'de kırıktı).
+  Swagger UI dosyaları FastAPI'deki gibi jsDelivr'dan gelir (Nginx CSP'si ikisinde de engeller).
+- Python `str.isprintable` (iç içe değerlerin `repr`'inde) yaklaşık taşındı; yalnızca rapor/CSV
+  hücrelerinde iç içe liste/sözlük olduğunda ve nadir Unicode biçim karakterlerinde fark edebilir.
+- `osiris plugins --plugins-dir` yok sayılır (plugin'ler ikiliye gömülü).
+- Python API ve CLI silinmedi (R7). Python API `api-python` profilinde geri dönüş yolu.
+
+**⚠ Canlı kurulum için geçiş adımları (R6)**
+1. Migration yok. İsteğe bağlı `.env`: `OSIRIS_API_RATE_PER_MIN` (varsayılan 600, 0 = kapalı).
+2. İmaj: `docker compose --profile api build osiris-api` (Rust derlemesi 10–15 dk; `osiris-server`
+   imajını R5 işçisiyle paylaşır).
+3. Geçiş: `docker compose --profile api up -d osiris-api` (aynı konteyner adı, Rust imajıyla yeniden
+   oluşturulur) → `docker compose restart nginx` (Nginx upstream IP'sini başlangıçta çözer).
+4. Doğrula: `curl -sk https://localhost:8443/api/health`; isteğe bağlı sözleşme testleri
+   (yıkıcı OLMAYAN): `OSIRIS_BASE_URL=https://localhost:8443/api OSIRIS_CONTRACT_VERIFY_TLS=0
+   OSIRIS_CONTRACT_API_KEY=… pytest -q tests/contract`. Loglar JSON: `docker compose logs -f osiris-api`.
+5. n8n: `docker compose up -d n8n` (yeni ortam değişkeni), iş akışını `deploy/n8n/` dosyasından yeniden
+   içe aktarın ve **Ayarlar** düğümünde `feed_url`/`query` değerlerini girin.
+6. **Geri dönüş:** `docker compose stop osiris-api && docker compose --profile api-python up -d --build
+   osiris-api-python && docker compose restart nginx` (Python API `osiris-api` adını devralır; ikisini
+   aynı anda çalıştırmayın).
+
+**Sıradaki:** R7 — Python modüllerinin ve `osiris-py` köprüsünün silinmesi, eski `embedding` sütunu
+ve audit v1 desteğinin (onayla) kaldırılması, tek imaj, dokümanların Rust'a göre yeniden yazılması.

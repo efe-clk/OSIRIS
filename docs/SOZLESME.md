@@ -196,8 +196,11 @@ Migration 004, `osiris/retention.py`. Doğrulama: `tests/integration`.
 
 ## 7. REST API
 
-Bağlayıcı tanım `tests/contract/` paketidir (ayrıntılı başvuru: [API.md](API.md)). Paket R6'da Rust
-API'sine **değiştirilmeden** koşmalıdır. Özet: kimlik sırası operatör `X-API-Key` → `Bearer` JWT
+Bağlayıcı tanım `tests/contract/` paketidir (ayrıntılı başvuru: [API.md](API.md)). Paket Rust
+API'sine (R6, `osiris-server api`) **değiştirilmeden** koşar; Python API'ye karşı da yeşildir.
+Zaman damgaları pydantic biçimindedir: UTC, `YYYY-MM-DDTHH:MM:SS[.ffffff]Z` (mikrosaniye sıfırsa
+kesirsiz, değilse 6 hane). R6–R7 arasında `tests/parity/` iki API'nin köşe durum ve gövde
+eşdeğerliğini ayrıca sınar. Özet: kimlik sırası operatör `X-API-Key` → `Bearer` JWT
 (HS256 sabit; sır yalnızca `OSIRIS_JWT_SECRET`) → DB anahtarı (SHA-256); roller viewer < analyst < admin;
 anahtarsız başlatma reddedilir (`OSIRIS_INSECURE_OPEN=1` hariç); hata gövdesi `{"detail": …}` ve iç
 ayrıntı içermez; kodlar 400/401/403/404/409/413/422/500/502/503.
@@ -237,6 +240,10 @@ Fixture: `fixtures/graph/cases.json`. Graf **yönsüz, çift başına tek kenar*
 - Topluluk: Clauset–Newman–Moore açgözlü modülerlik (networkx `greedy_modularity_communities`,
   ağırlıksız). **Topluluk ve üye sırası sözleşme dışıdır** (fixture sıralı listeler karşılaştırır).
   Kenarsız graf → her düğüm kendi topluluğu.
+- `/graph` gövdesi (`to_json`): düğümler ekleme sırasıyla `{"id", …nitelikler}`, kenarlar networkx
+  kenar görünümü sırasıyla `{"source", "target", "relation_type", "weight"}`. GraphML çıktısı
+  networkx `write_graphml` ile **bayt bayt** aynıdır (fixture `graphml`). Rust: `crates/osiris-graph`
+  (CNM networkx 3.6.1'den adım adım taşındı).
 
 ## 10. Embedding (R3 / K5)
 
@@ -298,3 +305,17 @@ Kaynak: `osiris-sdk/osiris/security.py`, Rust: `crates/osiris-security`. Fixture
 - Sanitizer'lar (`sanitize_domain`, `sanitize_hostname`, `sanitize_irc_token`,
   `sanitize_channel`, `mask_secret`): uzunluklar kod noktası; "alfanümerik" = Python
   `str.isalnum()` = `[\p{L}\p{N}]`.
+
+## 13. Rapor ve uyarı (R6)
+
+- **Rapor** (`fixtures/report/cases.json`): Markdown/HTML Jinja2 şablonlarının (`autoescape=True`)
+  çıktısıyla bayt bayt aynı; kaçış `& < > " '` → `&amp; &lt; &gt; &#34; &#39;`. Alan sınırları
+  (kod noktası): başlık 500, kapsam 1000, özet 20 000, bulgu ≤ 500 (başlık 500, açıklama 5000),
+  kaynak ≤ 500 × 1000. `generated_at` = `datetime.now(UTC).isoformat()`. CSV: Python `csv` excel
+  lehçesi (`\r\n`, QUOTE_MINIMAL), `= + - @ \t \r` ile başlayan dize hücresinin başına `'`;
+  başlık ilk satırın anahtarları (≤ 50), ≤ 10 000 satır; dosya yalnızca `output_dir` altına.
+- **Uyarı** (`fixtures/alert/cases.json`): içerik (ilk 50 000) ve başlık (ilk 2000) kesilip küçültülür;
+  sorgu metni kırpılıp küçültülür ve 500'e kesilir; alt-dize eşleşmesi; ≤ 100 sorgu. Anomali:
+  popülasyon standart sapması, `|z| > eşik`; sapma 0 iken farklı değer → `z_score = null`; ısınma
+  `min_samples`; yeni değer tabana önce katılmaz. Ayar sınırları: pencere 10–10 000, eşik 0,5–10,
+  ısınma 5–1000.
