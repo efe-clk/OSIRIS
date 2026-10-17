@@ -12,7 +12,27 @@ publish.workspace = true
 name = "osiris-server"
 path = "src/main.rs"
 
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
+axum.workspace = true
+base64.workspace = true
+getrandom.workspace = true
+governor.workspace = true
+hmac.workspace = true
+indexmap.workspace = true
+osiris-alert.workspace = true
+osiris-graph.workspace = true
+osiris-hash.workspace = true
+osiris-query.workspace = true
+osiris-report.workspace = true
+percent-encoding.workspace = true
+serde = { workspace = true, features = ["derive"] }
+sha2.workspace = true
+subtle.workspace = true
+tower-http.workspace = true
+utoipa.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
@@ -29,6 +49,10 @@ sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+http-body-util = "0.1.5"
 
 [lints]
 workspace = true

@@ -1,7 +1,8 @@
-//! `osiris-server` — OSIRIS Rust servis ikilisi (R5: veri katmanı; API R6'da eklenir).
+//! `osiris-server` — OSIRIS Rust servis ikilisi.
 //!
-//! Alt komutlar: `pipeline` (Stream işçisi), `shadow` (Python çıktısıyla gölge
-//! karşılaştırma), `collector` (zamanlayıcı), `collect` (tek seferlik toplama), `purge`.
+//! Alt komutlar: `api` (REST API, R6), `pipeline` (Stream işçisi), `shadow` (Python
+//! çıktısıyla gölge karşılaştırma), `collector` (zamanlayıcı), `collect` (tek seferlik
+//! toplama), `purge`. `OSIRIS_LOG_FORMAT=json` → yapılandırılmış JSON log.
 //! Ortam değişkenleri Python servisleriyle aynıdır (`OSIRIS_DATABASE_URL`,
 //! `OSIRIS_REDIS_URL`, `OSIRIS_EMBEDDING_MODEL`, `OSIRIS_MODEL_DIR`, `OSIRIS_NER`,
 //! `OSIRIS_RETENTION_DAYS`, `OSIRIS_RETENTION_INTERVAL`, `OSIRIS_PIPELINE_CONSUMER`).
@@ -34,6 +35,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// REST API (Python osiris-api'nin yerine; uçlar ve sözleşme aynı)
+    Api {
+        #[arg(long, env = "OSIRIS_API_ADDR", default_value = "0.0.0.0:8000")]
+        addr: String,
+        /// Prometheus `/metrics` dinleyicisi (boş = kapalı; API portuna açılmaz)
+        #[arg(long, env = "OSIRIS_METRICS_ADDR", default_value = "")]
+        metrics_addr: String,
+    },
     /// Kuyruk işçisi (Python `osiris-pipeline` ile aynı bayraklar)
     Pipeline {
         #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u64).range(1..=1000))]
@@ -114,17 +123,78 @@ async fn purge(pool: &sqlx::PgPool) -> anyhow::Result<(u64, u64)> {
     Ok(osiris_db::purge_expired(pool, osiris_db::default_retention_days(), 1000, 1000).await?)
 }
 
+/// Ctrl-C ya da SIGTERM (`docker stop`) → bekleyen istekler tamamlanıp kapanır.
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = term.recv() => {}
+                }
+            }
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+    tracing::info!("Kapanış sinyali alındı");
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let level = if cli.verbose { "debug" } else { "info" };
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| level.into()),
-        )
-        .init();
+    let filter =
+        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| level.into());
+    let fmt = tracing_subscriber::fmt().with_writer(std::io::stderr).with_env_filter(filter);
+    if std::env::var("OSIRIS_LOG_FORMAT").is_ok_and(|v| v.eq_ignore_ascii_case("json")) {
+        fmt.json().flatten_event(true).with_current_span(false).init();
+    } else {
+        fmt.init();
+    }
     match cli.cmd {
+        Cmd::Api { addr, metrics_addr } => {
+            use osiris_server::api;
+            let cfg = api::Config::from_env();
+            cfg.check_startup()?;
+            let url = cli.database_url.clone().filter(|u| !u.is_empty());
+            let url = url.unwrap_or_else(|| api::DEFAULT_DATABASE_URL.to_owned());
+            let pool = osiris_db::connect_lazy(&url, 16, Duration::from_secs(5))
+                .context("OSIRIS_DATABASE_URL geçersiz")?;
+            let redis = collector::redis_manager(&cli.redis_url)?;
+            let mgr = collector::Manager::new(
+                osiris_plugin::real::host(),
+                Some(redis),
+                Some(pool.clone()),
+            );
+            let state = Arc::new(api::AppState::new(cfg, pool, mgr));
+            if !metrics_addr.is_empty() {
+                let listener = tokio::net::TcpListener::bind(&metrics_addr)
+                    .await
+                    .with_context(|| format!("ölçüm adresi dinlenemedi: {metrics_addr}"))?;
+                let app = api::metrics_router(state.clone());
+                tracing::info!("Ölçümler: http://{metrics_addr}/metrics");
+                tokio::spawn(async move {
+                    if let Err(e) = axum::serve(listener, app).await {
+                        tracing::error!("Ölçüm dinleyicisi durdu: {e}");
+                    }
+                });
+            }
+            let listener = tokio::net::TcpListener::bind(&addr)
+                .await
+                .with_context(|| format!("API adresi dinlenemedi: {addr}"))?;
+            tracing::info!("OSIRIS API dinliyor: {addr}");
+            axum::serve(listener, api::router(state))
+                .with_graceful_shutdown(shutdown_signal())
+                .await?;
+        }
         Cmd::Purge => {
             let pool = pool(&cli.database_url)
                 .await?
