@@ -43,6 +43,7 @@ This document summarizes the high-level architecture of the OSIRIS platform and 
 |--------|---------------|-------|
 | `crates/` (Rust) | SSRF guard, `content_hash`/audit chain, regex extraction | Used by every Python service via `osiris_native` (`OSIRIS_NATIVE`); scheduling is in `osiris-collector` |
 | `osiris-collector` | Plugin loading, task execution, queue delivery | Crash isolation, full cron, source health tracking |
+| `osiris-server` (Rust, R5) | Queue worker (`pipeline`), scheduler (`collector`), 11 plugins, shadow comparison | Default worker in compose (`worker` profile); Python worker kept as `worker-python` fallback; scheduling off unless `OSIRIS_SCHEDULER=on`; WASM plugins: [design note](WASM_PLUGIN_TASARIMI.md) |
 | `osiris-pipeline` | Cleaning, NER, classification, embedding, storage | Regex + ONNX NER (mBERT-hrl), keyword topics, fastembed embeddings (384-d); Redis Streams consumer |
 | `osiris-query` | Full-text + semantic + entity search | `dict_row`, validated limits, LIKE-escape |
 | `osiris-graph` | Entity graph, centrality, communities | In-memory + `graph_edges` persistence |

@@ -120,6 +120,22 @@ atlanan tipler fixture'dadır. Bilinen sapma: STIX'in SCO için önerdiği names
   TEST-NET, multicast, `::1`, `fc00::/7`, `fe80::/10`, `0.0.0.0`, `::`); **IPv4-mapped IPv6 açılarak**
   denetlenir; DNS kayıtlarından **biri bile** engelliyse host reddedilir; çözülemeyen host reddedilir.
   Ham TCP yalnızca `safe_create_connection` ile (çöz → denetle → **doğrulanmış IP'ye** bağlan).
+- **Rust plugin'leri (R5):** `crates/osiris-plugins` aynı 23 fixture'ı `cargo test` ile geçer
+  (sonuç + ağ raporu). Config dönüşümleri Python semantiğiyle (`int()`, `float()`, `str()`,
+  `repr()`, `bool()`), Python'da yakalanmayan istisnalar `plugin hatası` olur.
+  - **web-scraper / tor / i2p:** bs4 ağacı (`html.parser` portu) + soupsieve seçicilerinin
+    alt kümesi (tür, `#id`, `.class`, öznitelik işleçleri, birleştiriciler, `:nth-*`, `:not`,
+    `:is`); desteklenmeyen seçici → tüm belge (Python'daki hata dalı gibi). soupsieve 3.0.3
+    davranışları taklit edilir (üst düzeyde `~` eşleşmez, `:empty` CData'yı saymaz).
+  - **rss:** feedparser alan kuralları (`osiris-feed`). **Eşdeğerlik `content_hash`
+    düzeyindedir:** girdi sayısı, `link`, `published` birebir; `raw_content` (temizlenmiş HTML)
+    `clean()` sonrası aynı, ham markup feedparser'ın sgmllib çıktısından farklı olabilir;
+    HTML içeren başlıklarda yalnızca kaçış biçimi (`&amp;`/`&`) farklı olabilir.
+  - **HTTP yanıt metni:** requests kuralları (başlıktaki charset; `text/*` → ISO-8859-1;
+    `application/json` → UTF-8; aksi halde UTF-8 ya da windows-1252 — charset_normalizer
+    tahmini birebir değildir). gzip/deflate çözülür.
+  - **username-search:** gömülü site DB'leri; `sites_db` plugin dizinindeki dosyalar ya da
+    `OSIRIS_USERNAME_DB_DIR` (plugin dizinine mutlak yol Rust'ta kabul edilmez).
 - **JSON kayıtların `raw_content`'i (R5 kararı, 2026-10-17):** `rest-api` ve `shodan` kaydı
   **kanonik JSON** yazar (`osiris.records.record_json`, Rust `osiris_hash::canonical::record_json`):
   RFC 8785 anahtar sırası (UTF-16) ve dize/sayı biçimi; tamsayılar her büyüklükte **tam ondalık**
@@ -157,6 +173,13 @@ eder; kaynak silinmişse öğe `source_id = NULL` ile yazılır.
 Teslim garantisi: **en az bir kez**. Aynı mesajın iki kez işlenmesi zararsızdır: `content_hash` UNIQUE
 (`ON CONFLICT DO NOTHING`) ve varlık bağları upsert'tir. Ölü-mektup girdisi orijinal alanlar +
 `source_id` (asıl girdi kimliği) + `reason` taşır.
+
+**Rust işçisi (R5):** `osiris-server pipeline` aynı akış, grup, ölü-mektup, `MAXLEN` ve
+teslim kurallarını uygular; `tests/integration/test_rust_pipeline_parity.py` aynı mesajları
+Python ve Rust işçisine işletip veritabanlarını karşılaştırır (öğeler, varlıklar, embedding,
+ölü-mektup sayısı). Collector (`osiris-server collector`) mesajı `QueueMessage` şemasıyla
+yazar; zamanlama standart 5 alanlı cron (UTC, haftanın günü 0/7 = Pazar), varsayılan kapalı
+(`OSIRIS_SCHEDULER=on`).
 
 ## 6. Veri saklama ve silme (KVKK)
 
@@ -226,6 +249,10 @@ Migration 005 (`items.embedding_v2 VECTOR(384)`, `items.embedding_model`).
 - Girdi: `cleaned_content`'in ilk 8000 kod noktası; tokenizer'ın kendi kesmesi (fastembed varsayılanı)
   uygulanır. Çıktı **L2-normalize** edilir; sıfır vektör → vektör yok.
 - Karşılaştırma bayt bayt **değildir**: her fixture vektörüyle kosinüs ≥ 0.999 (ONNX çalışma zamanı/CPU farkı).
+- **Bağlam uzunluğu 128 token:** Python fastembed `tokenizer_config.json`'daki
+  `model_max_length` (512) ve `max_length` (128) değerlerinin küçüğünü kullanır; Rust aynı
+  kuralı açıkça uygular (fastembed-rs yalnızca `model_max_length`'e bakar). Rust: mean pooling,
+  statik kuantizasyon (`crates/osiris-pipeline/src/embed.rs`).
 - `embedding_model` sütunu vektörü üreten modeli kaydeder; farklı modellerin vektörleri karıştırılmaz.
   Vektörlenemeyen (boş) öğe `"<model>#skip"` ile işaretlenir.
 - Semantik arama: 384 boyutlu sorgu → `embedding_v2 <=> sorgu` (kosinüs), `similarity = 1 − mesafe`.
@@ -245,6 +272,10 @@ Fixture: `fixtures/ner/cases.json` (model gerekir) + `osiris-pipeline/tests/test
   dilimlemeden önce kod noktasına çevrilmelidir (`fixtures/ner` `emoji_ofset` durumu bunu sınar).
 - Varlıklar regex varlıklarından **sonra** eklenir ve aynı `(tip, değer.lower())` tekilleştirmesine
   girer (§8). Model veya çalışma zamanı yoksa yalnızca regex çalışır (`OSIRIS_NER=off` ile de).
+- **Rust (R5):** `ort` 2.0.0-rc.13 + `tokenizers`, aynı kurallar (`crates/osiris-pipeline/src/ner.rs`);
+  `fixtures/ner` 9/9.
+- **Dil tespiti (R5 kararı):** Rust `lingua` (16 dil, deterministik), Python `langdetect`
+  (rastgele tohumlu). `language` sözleşme dışıdır, hash'e girmez.
 - Karşılaştırma: aynı model + aynı CPU sınıfında birebir eşitlik beklenir; int8 çekirdeklerinde
   CPU'ya bağlı nadir argmax farkları görülürse fixture'a tolerans eklenmesi sözleşme değişikliğidir.
 

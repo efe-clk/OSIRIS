@@ -9,7 +9,8 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
 | R2 — Geçiş sözleşmesi | ✅ Tamamlandı | `master` |
 | R3 — Geçiş dostu altyapı | ✅ Tamamlandı | `master` |
 | R4 — Rust iskeleti + PyO3 köprüsü | ✅ Tamamlandı | `master` |
-| R5–R7 | ⏳ Başlamadı | — |
+| R5 — Veri katmanı Rust'ta | ✅ Tamamlandı (canlı geçiş operatörde) | `master` |
+| R6–R7 | ⏳ Başlamadı | — |
 
 ## Kararlar (kullanıcı onayı, 2026-10-16)
 
@@ -224,3 +225,89 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
 **Sıradaki:** R5 — veri katmanı Rust'ta (`osiris-types`, `osiris-db`, `osiris-plugin`, 11 plugin,
 collector, pipeline). Açık karar maddesi: rest-api ve shodan plugin'lerinin `raw_content`'i
 (Python `str(dict)` taklidi mi, JSON'a geçiş mi; JSON'a geçiş hash'i değiştirir).
+
+## R5 (2026-10-17)
+
+**Kararlar (kullanıcı, 2026-10-17)**
+- rest-api / shodan `raw_content`: **JSON'a geçildi** (kanonik JSON; bu iki plugin'in yeni
+  öğelerinin `content_hash`'i değişti).
+- Dil tespiti: **lingua**, sınırlı dil kümesi (16 dil).
+- Zamanlama (E2): **varsayılan kapalı**, `OSIRIS_SCHEDULER=on` ile açılır.
+- Geçiş: **Rust varsayılan, Python yedek profilde** (`worker-python`); önce gölge mod.
+
+**Yapılanlar**
+- **Crate'ler:** `osiris-types` (schemas/ ile birebir, schemars karşılaştırması),
+  `osiris-plugin` (Collector trait, SSRF zorunlu `fetch`, DNS, `safe_connect`, fixture
+  oynatıcısı), `osiris-feed` (feedparser kuralları), `osiris-plugins` (11 plugin),
+  `osiris-db` (sqlx, Python ile aynı SQL), `osiris-pipeline` (Stream işçisi, ONNX NER, fastembed,
+  lingua, gölge karşılaştırma), `osiris-server` (ikili: `pipeline`, `shadow`, `collector`,
+  `collect`, `purge`).
+- **Fixture'lar:** 23 plugin senaryosu, 9 NER, 6 embedding (kosinüs ≥ 0.999), hash/extract/
+  audit/security Rust'ta geçiyor.
+- **Eşdeğerlik testleri (yeni):** bs4 ağacı (60k), soupsieve seçicileri (20k belge × 31
+  seçici), `html.unescape` (60k), `urljoin` (20k), Python `json.loads` + kanonik kayıt (200k),
+  RSS/Atom ↔ feedparser (10k; `content_hash` düzeyinde). Fark yok.
+- **İşçi eşdeğerliği (`tests/integration/test_rust_pipeline_parity.py`):** aynı 31 mesaj
+  Python ve Rust işçisine ayrı veritabanlarında işletildi: 27 öğe (metin, hash, URL, başlık,
+  tarih, metadata, kaynak, etiket, NER dahil varlıklar, embedding) birebir; ölü-mektup 4 = 4;
+  `osiris-server shadow` Python'un yazdığı veritabanında temiz. Dil uyumu 14/27 (beklenen).
+- **Canlı denemeler:** rss (3 gerçek feed), web-scraper (example.com, python.org + seçici),
+  dns-whois (example.com, 9 kayıt), username-search (GitHub/GitLab/Reddit) Python ile aynı;
+  Tor plugin'i gerçek Tor üzerinden DuckDuckGo .onion'u çekti; 4 SSRF vektörü (metadata IP'si,
+  iç ağa yönlendirme, 127.0.0.1'e çözülen ad, ters eğik çizgi) reddedildi; zamanlayıcı
+  kapalı/açık davranışı ve kaynak sağlığı + `source_id` bağlantısı doğrulandı.
+- **Dağıtım:** `Dockerfile.server` (çok aşamalı, debian trixie-slim, `nobody`); compose
+  `worker` profili artık Rust işçisi + collector; Python işçisi `worker-python` profilinde.
+- **CI:** entegrasyon işi `osiris-server`'ı derler, Rust model fixture'larını zorunlu koşar ve
+  işçi eşdeğerlik testini çalıştırır; `gen_feed_tables --check`; cargo-deny allowlist'e
+  ISC, BSD-3-Clause, MIT-0, BSL-1.0, CDLA-Permissive-2.0 (GPL-3.0 uyumlu) eklendi.
+- **K6:** [WASM plugin tasarım notu](WASM_PLUGIN_TASARIMI.md) (yalnızca tasarım).
+
+**Bulunan ve düzeltilen hatalar**
+- **E15 (güvenlik/işlev):** i2p plugin'i `.i2p` adlarını SSRF denetiminde DNS'e soruyordu →
+  canlıda hiç çalışamıyordu. `allow_i2p` eklendi (iki yolda).
+- **gzip:** Rust HTTP istemcisinde sıkıştırma çözme kapalıydı; canlı karşılaştırma yakaladı.
+- **Embedding bağlamı:** fastembed-rs 512 token kullanıyordu, Python 128; uzun metinde
+  kosinüs 0,64'tü — Python kuralı uygulandı.
+- **Cron haftanın günü:** Python APScheduler `day_of_week`'i 0 = Pazartesi sayardı (hiç
+  çalışmadığı için etkisizdi); Rust standart cron (0/7 = Pazar) kullanır.
+
+**Plandan sapmalar**
+- **RSS eşdeğerliği `content_hash` düzeyinde:** feedparser'ın sgmllib tabanlı temizleyicisi
+  bayt bayt taşınmadı; girdiler, link ve tarih birebir, temizlenmiş metin aynı, ham HTML ve
+  HTML'li başlıkların kaçış biçimi farklı olabilir.
+- **Gölge mod tasarımı:** plandaki "aynı Stream'den yazmadan oku" yerine Rust, Python'un
+  **yazdığı öğeleri** DB'den okuyup yeniden hesaplar. Gerekçe: Python işçisi işlediği girdiyi
+  `XDEL` ile siler; ikinci bir tüketici grubu girdileri kaçırırdı.
+- **Python collector/pipeline kodu silinmedi:** Python işçisi `worker-python` profilinde geri
+  dönüş yolu olarak duruyor; API'nin süreç içi `/sources/{id}/collect` toplaması R6'ya kadar
+  Python'da (API R6'da taşınır). Silme R7'de.
+- **ort yalnızca RC sürümünde:** `ort =2.0.0-rc.13` (fastembed 7.1.1'in sabitlediği sürüm;
+  kararlı 2.x yok).
+- `paste` bakım dışı uyarısı (tokenizers zinciri) cargo-deny'da gerekçeli istisna.
+- Eşlenmemiş UTF-16 vekili: Python dizede taşır (kuyruğa yazarken hata), Rust U+FFFD yazar.
+
+**⚠ Canlı kurulum için geçiş adımları (R5)**
+1. Migration yok. Modeller kurulu olmalı: `python models/download.py`.
+2. İmajları derle: `docker compose --profile worker --profile worker-python build`
+   (Rust derlemesi 10–15 dakika sürebilir).
+3. **Gölge aşaması** (önerilen, birkaç saat/gün): Python işçisi çalışırken Rust'ı yalnızca
+   karşılaştırıcı olarak başlat:
+   `docker compose --profile worker-python up -d` ve
+   `OSIRIS_PIPELINE_SHADOW=1 docker compose --profile worker up -d osiris-pipeline`.
+   Rapor: `docker compose logs -f osiris-pipeline` (`gölge: uyuşmazlık yok` beklenir) ya da tek
+   seferlik `docker compose run --rm osiris-pipeline shadow --minutes 1440`.
+4. **Geçiş:** `docker compose stop osiris-pipeline-python` → `.env`'de
+   `OSIRIS_PIPELINE_SHADOW=0` → `docker compose --profile worker up -d`. Bekleyen mesajlar
+   aynı tüketici grubunda kaldığı için kaybolmaz.
+5. **Zamanlama** isteniyorsa önce kaynakların `schedule` değerlerini gözden geçir (artık
+   gerçekten çalışacaklar), sonra `.env`'de `OSIRIS_SCHEDULER=on` ve
+   `docker compose --profile worker up -d osiris-collector`.
+6. **Geri dönüş:** `docker compose stop osiris-pipeline osiris-collector` →
+   `docker compose --profile worker-python up -d`.
+7. rest-api/shodan kaynakları varsa: geçişten sonraki ilk toplamada aynı kayıtlar yeni
+   (JSON) `content_hash` ile bir kez daha saklanır; saklama süresiyle temizlenir.
+
+**Sıradaki:** R6 — API, CLI ve analiz katmanı Rust'ta (`osiris-query`, `osiris-graph`,
+`osiris-alert`, `osiris-report`, `osiris-server` axum API'si). Açık karar maddesi: E11
+(API'ye açık olmayan fonksiyonlar uç olarak eklenecek mi?).

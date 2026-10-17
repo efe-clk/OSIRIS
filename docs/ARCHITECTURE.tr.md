@@ -43,6 +43,7 @@ Bu doküman, OSIRIS platformunun yüksek seviyeli mimarisini ve modül sorumlulu
 |-------|-----------|--------|
 | `crates/` (Rust) | SSRF denetimi, `content_hash`/denetim zinciri, regex çıkarma | Tüm Python servisleri `osiris_native` üzerinden kullanır (`OSIRIS_NATIVE`); zamanlama `osiris-collector`'da |
 | `osiris-collector` | Plugin yükleme, görev çalıştırma, kuyruğa iletme | Crash izolasyonu, tam cron, kaynak sağlık takibi |
+| `osiris-server` (Rust, R5) | Kuyruk işçisi (`pipeline`), zamanlayıcı (`collector`), 11 plugin, gölge karşılaştırma | Compose'da varsayılan işçi (`worker` profili); Python işçisi `worker-python` yedeği; zamanlama `OSIRIS_SCHEDULER=on` olmadan kapalı; WASM plugin'ler: [tasarım notu](WASM_PLUGIN_TASARIMI.md) |
 | `osiris-pipeline` | Temizleme, NER, sınıflandırma, embedding, depolama | Regex + ONNX NER (mBERT-hrl), anahtar kelime konuları, fastembed embedding (384 boyut); Redis Streams tüketicisi |
 | `osiris-query` | Tam metin + semantik + varlık araması | `dict_row`, doğrulanmış limitler, LIKE kaçışı |
 | `osiris-graph` | Varlık grafı, merkezilik, kümeleme | Bellek-içi + `graph_edges` kalıcılığı |
