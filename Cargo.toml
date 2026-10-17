@@ -26,6 +26,7 @@ osiris-queue = { path = "crates/osiris-queue" }
 osiris-collector = { path = "crates/osiris-collector" }
 osiris-graph = { path = "crates/osiris-graph" }
 osiris-report = { path = "crates/osiris-report" }
+osiris-alert = { path = "crates/osiris-alert" }
 ammonia = "4.2.4"
 anyhow = "1.0.104"
 async-trait = "0.1.92"
@@ -39,6 +40,7 @@ futures = "0.3.34"
 hickory-resolver = "0.26.3"
 indexmap = "2.14.2"
 jsonschema = { version = "0.59.0", default-features = false }
+lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
 lingua = { version = "1.8.0", default-features = false, features = ["arabic", "chinese", "dutch", "english", "french", "german", "italian", "japanese", "korean", "persian", "polish", "portuguese", "russian", "spanish", "turkish", "ukrainian"] }
 ndarray = "0.17.2"
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls"] }

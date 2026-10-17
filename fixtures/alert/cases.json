@@ -1,0 +1,1749 @@
+{
+  "cases": [
+    {
+      "name": "eslesme_buyuk_kucuk_harf",
+      "item": {
+        "id": "i1",
+        "title": "Başlık",
+        "cleaned_content": "Metinde FIDYE ve İSTANBUL geçiyor"
+      },
+      "queries": [
+        {
+          "id": "1",
+          "name": "sorgu-1",
+          "query_text": "fidye",
+          "alert_enabled": true
+        },
+        {
+          "id": "2",
+          "name": "sorgu-2",
+          "query_text": "  istanbul  ",
+          "alert_enabled": true
+        },
+        {
+          "id": "3",
+          "name": "sorgu-3",
+          "query_text": "yok",
+          "alert_enabled": true
+        },
+        {
+          "id": "4",
+          "name": "sorgu-4",
+          "query_text": "fidye",
+          "alert_enabled": false
+        },
+        {
+          "id": "5",
+          "name": "sorgu-5",
+          "query_text": "",
+          "alert_enabled": true
+        },
+        "bozuk",
+        {
+          "id": "6",
+          "name": "sorgu-6",
+          "query_text": "başlık",
+          "alert_enabled": true
+        },
+        {
+          "id": null,
+          "name": null,
+          "query_text": "metinde",
+          "alert_enabled": 1
+        }
+      ],
+      "expected": {
+        "triggered": [
+          {
+            "kind": "match",
+            "query_id": "1",
+            "query_name": "sorgu-1",
+            "item_id": "i1",
+            "matched": "fidye"
+          },
+          {
+            "kind": "match",
+            "query_id": "6",
+            "query_name": "sorgu-6",
+            "item_id": "i1",
+            "matched": "başlık"
+          },
+          {
+            "kind": "match",
+            "query_id": "",
+            "query_name": "",
+            "item_id": "i1",
+            "matched": "metinde"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sessize_alma",
+      "muted": [
+        "1"
+      ],
+      "item": {
+        "cleaned_content": "abc"
+      },
+      "queries": [
+        {
+          "id": "1",
+          "name": "sorgu-1",
+          "query_text": "abc",
+          "alert_enabled": true
+        },
+        {
+          "id": "2",
+          "name": "sorgu-2",
+          "query_text": "ABC",
+          "alert_enabled": true
+        }
+      ],
+      "expected": {
+        "triggered": [
+          {
+            "kind": "match",
+            "query_id": "2",
+            "query_name": "sorgu-2",
+            "item_id": null,
+            "matched": "abc"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sorgu_siniri_100",
+      "item": {
+        "cleaned_content": "x"
+      },
+      "queries": [
+        {
+          "id": "0",
+          "name": "sorgu-0",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "1",
+          "name": "sorgu-1",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "2",
+          "name": "sorgu-2",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "3",
+          "name": "sorgu-3",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "4",
+          "name": "sorgu-4",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "5",
+          "name": "sorgu-5",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "6",
+          "name": "sorgu-6",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "7",
+          "name": "sorgu-7",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "8",
+          "name": "sorgu-8",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "9",
+          "name": "sorgu-9",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "10",
+          "name": "sorgu-10",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "11",
+          "name": "sorgu-11",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "12",
+          "name": "sorgu-12",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "13",
+          "name": "sorgu-13",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "14",
+          "name": "sorgu-14",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "15",
+          "name": "sorgu-15",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "16",
+          "name": "sorgu-16",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "17",
+          "name": "sorgu-17",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "18",
+          "name": "sorgu-18",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "19",
+          "name": "sorgu-19",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "20",
+          "name": "sorgu-20",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "21",
+          "name": "sorgu-21",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "22",
+          "name": "sorgu-22",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "23",
+          "name": "sorgu-23",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "24",
+          "name": "sorgu-24",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "25",
+          "name": "sorgu-25",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "26",
+          "name": "sorgu-26",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "27",
+          "name": "sorgu-27",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "28",
+          "name": "sorgu-28",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "29",
+          "name": "sorgu-29",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "30",
+          "name": "sorgu-30",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "31",
+          "name": "sorgu-31",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "32",
+          "name": "sorgu-32",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "33",
+          "name": "sorgu-33",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "34",
+          "name": "sorgu-34",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "35",
+          "name": "sorgu-35",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "36",
+          "name": "sorgu-36",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "37",
+          "name": "sorgu-37",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "38",
+          "name": "sorgu-38",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "39",
+          "name": "sorgu-39",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "40",
+          "name": "sorgu-40",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "41",
+          "name": "sorgu-41",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "42",
+          "name": "sorgu-42",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "43",
+          "name": "sorgu-43",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "44",
+          "name": "sorgu-44",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "45",
+          "name": "sorgu-45",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "46",
+          "name": "sorgu-46",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "47",
+          "name": "sorgu-47",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "48",
+          "name": "sorgu-48",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "49",
+          "name": "sorgu-49",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "50",
+          "name": "sorgu-50",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "51",
+          "name": "sorgu-51",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "52",
+          "name": "sorgu-52",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "53",
+          "name": "sorgu-53",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "54",
+          "name": "sorgu-54",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "55",
+          "name": "sorgu-55",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "56",
+          "name": "sorgu-56",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "57",
+          "name": "sorgu-57",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "58",
+          "name": "sorgu-58",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "59",
+          "name": "sorgu-59",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "60",
+          "name": "sorgu-60",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "61",
+          "name": "sorgu-61",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "62",
+          "name": "sorgu-62",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "63",
+          "name": "sorgu-63",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "64",
+          "name": "sorgu-64",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "65",
+          "name": "sorgu-65",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "66",
+          "name": "sorgu-66",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "67",
+          "name": "sorgu-67",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "68",
+          "name": "sorgu-68",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "69",
+          "name": "sorgu-69",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "70",
+          "name": "sorgu-70",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "71",
+          "name": "sorgu-71",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "72",
+          "name": "sorgu-72",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "73",
+          "name": "sorgu-73",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "74",
+          "name": "sorgu-74",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "75",
+          "name": "sorgu-75",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "76",
+          "name": "sorgu-76",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "77",
+          "name": "sorgu-77",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "78",
+          "name": "sorgu-78",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "79",
+          "name": "sorgu-79",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "80",
+          "name": "sorgu-80",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "81",
+          "name": "sorgu-81",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "82",
+          "name": "sorgu-82",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "83",
+          "name": "sorgu-83",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "84",
+          "name": "sorgu-84",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "85",
+          "name": "sorgu-85",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "86",
+          "name": "sorgu-86",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "87",
+          "name": "sorgu-87",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "88",
+          "name": "sorgu-88",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "89",
+          "name": "sorgu-89",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "90",
+          "name": "sorgu-90",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "91",
+          "name": "sorgu-91",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "92",
+          "name": "sorgu-92",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "93",
+          "name": "sorgu-93",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "94",
+          "name": "sorgu-94",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "95",
+          "name": "sorgu-95",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "96",
+          "name": "sorgu-96",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "97",
+          "name": "sorgu-97",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "98",
+          "name": "sorgu-98",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "99",
+          "name": "sorgu-99",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "100",
+          "name": "sorgu-100",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "101",
+          "name": "sorgu-101",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "102",
+          "name": "sorgu-102",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "103",
+          "name": "sorgu-103",
+          "query_text": "x",
+          "alert_enabled": true
+        },
+        {
+          "id": "104",
+          "name": "sorgu-104",
+          "query_text": "x",
+          "alert_enabled": true
+        }
+      ],
+      "expected": {
+        "triggered": [
+          {
+            "kind": "match",
+            "query_id": "0",
+            "query_name": "sorgu-0",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "1",
+            "query_name": "sorgu-1",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "2",
+            "query_name": "sorgu-2",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "3",
+            "query_name": "sorgu-3",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "4",
+            "query_name": "sorgu-4",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "5",
+            "query_name": "sorgu-5",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "6",
+            "query_name": "sorgu-6",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "7",
+            "query_name": "sorgu-7",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "8",
+            "query_name": "sorgu-8",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "9",
+            "query_name": "sorgu-9",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "10",
+            "query_name": "sorgu-10",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "11",
+            "query_name": "sorgu-11",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "12",
+            "query_name": "sorgu-12",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "13",
+            "query_name": "sorgu-13",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "14",
+            "query_name": "sorgu-14",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "15",
+            "query_name": "sorgu-15",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "16",
+            "query_name": "sorgu-16",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "17",
+            "query_name": "sorgu-17",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "18",
+            "query_name": "sorgu-18",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "19",
+            "query_name": "sorgu-19",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "20",
+            "query_name": "sorgu-20",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "21",
+            "query_name": "sorgu-21",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "22",
+            "query_name": "sorgu-22",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "23",
+            "query_name": "sorgu-23",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "24",
+            "query_name": "sorgu-24",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "25",
+            "query_name": "sorgu-25",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "26",
+            "query_name": "sorgu-26",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "27",
+            "query_name": "sorgu-27",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "28",
+            "query_name": "sorgu-28",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "29",
+            "query_name": "sorgu-29",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "30",
+            "query_name": "sorgu-30",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "31",
+            "query_name": "sorgu-31",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "32",
+            "query_name": "sorgu-32",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "33",
+            "query_name": "sorgu-33",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "34",
+            "query_name": "sorgu-34",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "35",
+            "query_name": "sorgu-35",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "36",
+            "query_name": "sorgu-36",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "37",
+            "query_name": "sorgu-37",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "38",
+            "query_name": "sorgu-38",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "39",
+            "query_name": "sorgu-39",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "40",
+            "query_name": "sorgu-40",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "41",
+            "query_name": "sorgu-41",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "42",
+            "query_name": "sorgu-42",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "43",
+            "query_name": "sorgu-43",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "44",
+            "query_name": "sorgu-44",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "45",
+            "query_name": "sorgu-45",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "46",
+            "query_name": "sorgu-46",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "47",
+            "query_name": "sorgu-47",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "48",
+            "query_name": "sorgu-48",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "49",
+            "query_name": "sorgu-49",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "50",
+            "query_name": "sorgu-50",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "51",
+            "query_name": "sorgu-51",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "52",
+            "query_name": "sorgu-52",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "53",
+            "query_name": "sorgu-53",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "54",
+            "query_name": "sorgu-54",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "55",
+            "query_name": "sorgu-55",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "56",
+            "query_name": "sorgu-56",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "57",
+            "query_name": "sorgu-57",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "58",
+            "query_name": "sorgu-58",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "59",
+            "query_name": "sorgu-59",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "60",
+            "query_name": "sorgu-60",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "61",
+            "query_name": "sorgu-61",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "62",
+            "query_name": "sorgu-62",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "63",
+            "query_name": "sorgu-63",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "64",
+            "query_name": "sorgu-64",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "65",
+            "query_name": "sorgu-65",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "66",
+            "query_name": "sorgu-66",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "67",
+            "query_name": "sorgu-67",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "68",
+            "query_name": "sorgu-68",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "69",
+            "query_name": "sorgu-69",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "70",
+            "query_name": "sorgu-70",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "71",
+            "query_name": "sorgu-71",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "72",
+            "query_name": "sorgu-72",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "73",
+            "query_name": "sorgu-73",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "74",
+            "query_name": "sorgu-74",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "75",
+            "query_name": "sorgu-75",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "76",
+            "query_name": "sorgu-76",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "77",
+            "query_name": "sorgu-77",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "78",
+            "query_name": "sorgu-78",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "79",
+            "query_name": "sorgu-79",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "80",
+            "query_name": "sorgu-80",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "81",
+            "query_name": "sorgu-81",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "82",
+            "query_name": "sorgu-82",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "83",
+            "query_name": "sorgu-83",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "84",
+            "query_name": "sorgu-84",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "85",
+            "query_name": "sorgu-85",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "86",
+            "query_name": "sorgu-86",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "87",
+            "query_name": "sorgu-87",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "88",
+            "query_name": "sorgu-88",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "89",
+            "query_name": "sorgu-89",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "90",
+            "query_name": "sorgu-90",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "91",
+            "query_name": "sorgu-91",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "92",
+            "query_name": "sorgu-92",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "93",
+            "query_name": "sorgu-93",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "94",
+            "query_name": "sorgu-94",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "95",
+            "query_name": "sorgu-95",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "96",
+            "query_name": "sorgu-96",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "97",
+            "query_name": "sorgu-97",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "98",
+            "query_name": "sorgu-98",
+            "item_id": null,
+            "matched": "x"
+          },
+          {
+            "kind": "match",
+            "query_id": "99",
+            "query_name": "sorgu-99",
+            "item_id": null,
+            "matched": "x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "isinma_ve_z_skor",
+      "metric": "saatlik",
+      "metrics": [
+        {
+          "value": 10,
+          "record": false
+        },
+        {
+          "value": 10
+        },
+        {
+          "value": 12
+        },
+        {
+          "value": 9
+        },
+        {
+          "value": 11
+        },
+        {
+          "value": 10
+        },
+        {
+          "value": 13
+        },
+        {
+          "value": 8
+        },
+        {
+          "value": 10
+        },
+        {
+          "value": 11
+        },
+        {
+          "value": 9
+        },
+        {
+          "value": 10.5,
+          "record": false
+        },
+        {
+          "value": 30,
+          "record": false
+        },
+        {
+          "value": -5,
+          "record": false
+        },
+        {
+          "value": "abc",
+          "record": false
+        }
+      ],
+      "expected": {
+        "anomalies": [
+          null,
+          null,
+          {
+            "kind": "anomaly",
+            "metric": "saatlik",
+            "value": 30.0,
+            "mean": 10.3,
+            "stdev": 1.4177446878757824,
+            "z_score": 13.895308632414386,
+            "samples": 10
+          },
+          {
+            "kind": "anomaly",
+            "metric": "saatlik",
+            "value": -5.0,
+            "mean": 10.3,
+            "stdev": 1.4177446878757824,
+            "z_score": -10.791787922636555,
+            "samples": 10
+          },
+          null
+        ]
+      }
+    },
+    {
+      "name": "sifir_sapma",
+      "metric": "sabit",
+      "metrics": [
+        {
+          "value": 5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5,
+          "record": false
+        },
+        {
+          "value": 6,
+          "record": false
+        }
+      ],
+      "expected": {
+        "anomalies": [
+          null,
+          {
+            "kind": "anomaly",
+            "metric": "sabit",
+            "value": 6.0,
+            "mean": 5.0,
+            "stdev": 0.0,
+            "z_score": null,
+            "samples": 10
+          }
+        ]
+      }
+    },
+    {
+      "name": "esik_ve_pencere",
+      "options": {
+        "anomaly_window": 10,
+        "anomaly_threshold": 1.5,
+        "anomaly_min_samples": 5
+      },
+      "metrics": [
+        {
+          "value": 1
+        },
+        {
+          "value": 2
+        },
+        {
+          "value": 3
+        },
+        {
+          "value": 4
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 6
+        },
+        {
+          "value": 7
+        },
+        {
+          "value": 8
+        },
+        {
+          "value": 9
+        },
+        {
+          "value": 10
+        },
+        {
+          "value": 11
+        },
+        {
+          "value": 12
+        },
+        {
+          "value": 13
+        },
+        {
+          "value": 14
+        },
+        {
+          "value": 15
+        },
+        {
+          "value": 13,
+          "record": false
+        },
+        {
+          "value": 17,
+          "record": false
+        },
+        {
+          "value": 3,
+          "record": false
+        }
+      ],
+      "expected": {
+        "anomalies": [
+          null,
+          {
+            "kind": "anomaly",
+            "metric": "m",
+            "value": 17.0,
+            "mean": 10.5,
+            "stdev": 2.8722813232690143,
+            "z_score": 2.263009527424072,
+            "samples": 10
+          },
+          {
+            "kind": "anomaly",
+            "metric": "m",
+            "value": 3.0,
+            "mean": 10.5,
+            "stdev": 2.8722813232690143,
+            "z_score": -2.6111648393354674,
+            "samples": 10
+          }
+        ]
+      }
+    },
+    {
+      "name": "sinirlanan_secenekler",
+      "options": {
+        "anomaly_window": 1,
+        "anomaly_threshold": 100,
+        "anomaly_min_samples": "x"
+      },
+      "metrics": [
+        {
+          "value": 1
+        },
+        {
+          "value": 2
+        },
+        {
+          "value": 1
+        },
+        {
+          "value": 2
+        },
+        {
+          "value": 1
+        },
+        {
+          "value": 2
+        },
+        {
+          "value": 1
+        },
+        {
+          "value": 2
+        },
+        {
+          "value": 1
+        },
+        {
+          "value": 2
+        },
+        {
+          "value": 40,
+          "record": false
+        },
+        {
+          "value": 1.6,
+          "record": false
+        }
+      ],
+      "expected": {
+        "anomalies": [
+          {
+            "kind": "anomaly",
+            "metric": "m",
+            "value": 40.0,
+            "mean": 1.5,
+            "stdev": 0.5,
+            "z_score": 77.0,
+            "samples": 10
+          },
+          null
+        ]
+      }
+    }
+  ]
+}

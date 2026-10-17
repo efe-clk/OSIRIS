@@ -7,6 +7,7 @@ pub mod audit;
 pub mod canonical;
 pub mod html;
 pub mod json;
+pub mod pystr;
 
 use sha2::{Digest, Sha256};
 

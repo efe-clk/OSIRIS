@@ -14,6 +14,7 @@ use chrono::{DateTime, Timelike, Utc};
 use osiris_hash::Json;
 use osiris_hash::canonical::py_float_repr;
 use osiris_hash::json::write_str;
+use osiris_hash::pystr::py_str;
 use osiris_hash::truncate_chars;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -51,81 +52,6 @@ pub fn html_escape(s: &str) -> String {
         }
     }
     out
-}
-
-// ------------------------------------------------------------------- Python str()/repr()
-
-/// Python `str.isprintable` yaklaşığı: Cc, Zl, Zp, boşluk dışı Zs ve yaygın Cf yazdırılamaz.
-fn py_printable(c: char) -> bool {
-    !(c.is_control()
-        || matches!(c as u32,
-            0x00A0 | 0x00AD | 0x1680 | 0x2000..=0x200F | 0x2028..=0x202F | 0x205F..=0x2064
-            | 0x3000 | 0xFEFF))
-}
-
-/// Python `repr(str)`
-pub fn py_str_repr(s: &str) -> String {
-    let quote = if s.contains('\'') && !s.contains('"') { '"' } else { '\'' };
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push(quote);
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c == quote => {
-                out.push('\\');
-                out.push(c);
-            }
-            c if !py_printable(c) => {
-                let n = c as u32;
-                let _ = if n < 0x100 {
-                    write!(out, "\\x{n:02x}")
-                } else if n < 0x10000 {
-                    write!(out, "\\u{n:04x}")
-                } else {
-                    write!(out, "\\U{n:08x}")
-                };
-            }
-            c => out.push(c),
-        }
-    }
-    out.push(quote);
-    out
-}
-
-/// Python `repr()` (JSON'dan gelen değerler için)
-pub fn py_repr(v: &Json) -> String {
-    match v {
-        Json::Str(s) => py_str_repr(s),
-        Json::Array(items) => {
-            let parts: Vec<String> = items.iter().map(py_repr).collect();
-            format!("[{}]", parts.join(", "))
-        }
-        Json::Object(entries) => {
-            let parts: Vec<String> = entries
-                .iter()
-                .map(|(k, v)| format!("{}: {}", py_str_repr(k), py_repr(v)))
-                .collect();
-            format!("{{{}}}", parts.join(", "))
-        }
-        other => py_str(other),
-    }
-}
-
-/// Python `str()`
-pub fn py_str(v: &Json) -> String {
-    match v {
-        Json::Null => "None".into(),
-        Json::Bool(true) => "True".into(),
-        Json::Bool(false) => "False".into(),
-        Json::Int(i) => i.to_string(),
-        Json::BigInt(s) => s.clone(),
-        Json::Float(f) => py_float_repr(*f),
-        Json::Str(s) => s.clone(),
-        other => py_repr(other),
-    }
 }
 
 fn get<'a>(obj: &'a Json, key: &str) -> Option<&'a Json> {
@@ -513,9 +439,6 @@ mod tests {
 
     #[test]
     fn python_bicimleri() {
-        assert_eq!(py_str_repr("v'q"), "\"v'q\"");
-        assert_eq!(py_str_repr("a'b\"c\n"), "'a\\'b\"c\\n'");
-        assert_eq!(py_str_repr("\u{7}é\u{2028}"), "'\\x07é\\u2028'");
         let t: DateTime<Utc> = "2026-01-02T03:04:05.000007Z".parse().unwrap();
         assert_eq!(py_isoformat(t), "2026-01-02T03:04:05.000007+00:00");
         let t: DateTime<Utc> = "2026-01-02T03:04:05Z".parse().unwrap();
