@@ -4,7 +4,7 @@
     {
       "parameters": {
         "rule": {
-          "interval": [{"field": "seconds", "secondsInterval": 60}]
+          "interval": [{"field": "minutes", "minutesInterval": 15}]
         }
       },
       "id": "trigger",
@@ -15,28 +15,18 @@
     },
     {
       "parameters": {
-        "url": "http://osiris-api:8000/search",
-        "method": "POST",
-        "sendBody": true,
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {"name": "Content-Type", "value": "application/json"},
-            {"name": "X-API-Key", "value": "={{ $env.OSIRIS_API_KEY }}"}
+        "assignments": {
+          "assignments": [
+            {"id": "feed_url", "name": "feed_url", "value": "https://www.example.com/feed.xml", "type": "string"},
+            {"id": "query", "name": "query", "value": "fidye", "type": "string"}
           ]
         },
-        "bodyParameters": {
-          "parameters": [
-            {"name": "query", "value": "{{ $json.query }}"},
-            {"name": "limit", "value": 20}
-          ]
-        },
-        "options": {"timeout": 30000}
+        "options": {}
       },
-      "id": "search",
-      "name": "OSIRIS Arama",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "settings",
+      "name": "Ayarlar",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [220, 0]
     },
     {
@@ -44,17 +34,13 @@
         "url": "http://osiris-api:8000/collect",
         "method": "POST",
         "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ plugin_id: 'rss', config: { feed_url: $json.feed_url } }) }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {"name": "Content-Type", "value": "application/json"},
             {"name": "X-API-Key", "value": "={{ $env.OSIRIS_API_KEY }}"}
-          ]
-        },
-        "bodyParameters": {
-          "parameters": [
-            {"name": "plugin_id", "value": "rss"},
-            {"name": "config", "value": "={{ JSON.stringify({feed_url: $json.feed_url}) }}"}
           ]
         },
         "options": {"timeout": 60000}
@@ -63,16 +49,36 @@
       "name": "OSIRIS Topla",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 0]
+      "position": [440, 0],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://osiris-api:8000/search",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: $('Ayarlar').item.json.query, limit: 20 }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "X-API-Key", "value": "={{ $env.OSIRIS_API_KEY }}"}
+          ]
+        },
+        "options": {"timeout": 30000}
+      },
+      "id": "search",
+      "name": "OSIRIS Arama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0]
     }
   ],
   "connections": {
-    "Zamanlayıcı": {
-      "main": [[{"node": "OSIRIS Arama", "type": "main", "index": 0}]]
-    },
-    "OSIRIS Arama": {
-      "main": [[{"node": "OSIRIS Topla", "type": "main", "index": 0}]]
-    }
+    "Zamanlayıcı": {"main": [[{"node": "Ayarlar", "type": "main", "index": 0}]]},
+    "Ayarlar": {"main": [[{"node": "OSIRIS Topla", "type": "main", "index": 0}]]},
+    "OSIRIS Topla": {"main": [[{"node": "OSIRIS Arama", "type": "main", "index": 0}]]}
   },
   "settings": {"executionOrder": "v1"}
 }
