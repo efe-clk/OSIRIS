@@ -212,6 +212,28 @@ impl Pipeline {
     }
 }
 
+/// `--reembed`: vektörü olmayan öğeleri partiler hâlinde vektörleştirir (boş metin
+/// `<model>#skip` ile işaretlenir, bir daha seçilmez). Dönen: işlenen öğe sayısı.
+pub async fn reembed(
+    pool: &sqlx::PgPool,
+    embedder: &embed::Embedder,
+    batch: i64,
+) -> Result<usize, sqlx::Error> {
+    let mut done = 0;
+    loop {
+        let rows = osiris_db::items_without_embedding(pool, batch).await?;
+        if rows.is_empty() {
+            return Ok(done);
+        }
+        for (id, text) in rows {
+            osiris_db::set_embedding(pool, &id, embedder.embed(&text).as_deref(), &embedder.name)
+                .await?;
+            done += 1;
+        }
+        tracing::info!("Yeniden vektörleştirme: {done} öğe");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,27 +255,5 @@ mod tests {
         assert_eq!(ni.title, "");
         assert!(p.process_one("[]").is_err());
         assert!(p.process_one(r#"{"item":{}}"#).is_err());
-    }
-}
-
-/// `--reembed`: vektörü olmayan öğeleri partiler hâlinde vektörleştirir (boş metin
-/// `<model>#skip` ile işaretlenir, bir daha seçilmez). Dönen: işlenen öğe sayısı.
-pub async fn reembed(
-    pool: &sqlx::PgPool,
-    embedder: &embed::Embedder,
-    batch: i64,
-) -> Result<usize, sqlx::Error> {
-    let mut done = 0;
-    loop {
-        let rows = osiris_db::items_without_embedding(pool, batch).await?;
-        if rows.is_empty() {
-            return Ok(done);
-        }
-        for (id, text) in rows {
-            osiris_db::set_embedding(pool, &id, embedder.embed(&text).as_deref(), &embedder.name)
-                .await?;
-            done += 1;
-        }
-        tracing::info!("Yeniden vektörleştirme: {done} öğe");
     }
 }
