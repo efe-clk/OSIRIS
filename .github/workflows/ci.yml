@@ -6,51 +6,23 @@ on:
   pull_request:
 
 jobs:
-  python-tests:
-    name: Python testleri
+  rust:
+    name: Rust (fmt, clippy, test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Bağımlılıkları kur
-        run: |
-          pip install -e ./osiris-sdk
-          pip install -e ./osiris-collector
-          pip install -e "./osiris-pipeline[ner]"
-          pip install -e ./osiris-graph
-          pip install -e ./osiris-alert
-          pip install -e ./osiris-report
-          pip install -e ./osiris-query
-          pip install -e ./osiris-api
-          pip install -e ./osiris-cli
-          pip install pytest pytest-cov httpx jsonschema
-      - name: Rust çekirdeği (osiris_native, PyO3) — rust-toolchain.toml sürümüyle derlenir
-        run: |
-          rustup toolchain install
-          pip install ./crates/osiris-py
-      - name: Plugin bağımlılıkları
-        run: |
-          for req in plugins/*/requirements.txt; do pip install -r "$req"; done
-      - name: Üretilmiş tablolar güncel mi (bs4 → content_hash, feedparser → rss)
-        run: |
-          python tools/gen_html_tables.py --check
-          python tools/gen_feed_tables.py --check
-      - name: Testleri çalıştır — Rust yolu (varsayılan, %80 kapsam eşiği)
-        run: |
-          pytest -q \
-            --cov=osiris --cov=osiris_collector --cov=osiris_pipeline \
-            --cov=osiris_graph --cov=osiris_alert --cov=osiris_report \
-            --cov=osiris_query --cov=osiris_api --cov=osiris_cli \
-            --cov-report=term-missing --cov-fail-under=80
-      - name: Testleri çalıştır — Python referans yolu (OSIRIS_NATIVE=python)
-        env:
-          OSIRIS_NATIVE: python
-        run: pytest -q
+      - name: Araç zinciri (rust-toolchain.toml)
+        run: rustup toolchain install && rustc --version
+      - uses: Swatinem/rust-cache@v2
+      - name: Biçim
+        run: cargo fmt --all --check
+      - name: Clippy (uyarı = hata)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Testler (fixtures/ altın verileri dahil)
+        run: cargo test --workspace --locked
 
   integration:
-    name: Entegrasyon (PostgreSQL)
+    name: Entegrasyon (PostgreSQL + Redis + modeller + sözleşme)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -72,141 +44,66 @@ jobs:
       PGPASSWORD: osiris
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Migration'ları uygula (iki kez — tekrar çalıştırılabilirlik)
+      - name: Araç zinciri (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: osiris-server (release)
+        run: cargo build --release --locked -p osiris-server
+      - name: Migration'lar — psql (docker initdb yolu) ve osiris-server migrate, ikişer kez
         run: |
-          psql -h localhost -U osiris -d osiris_test -qc "CREATE DATABASE osiris_rust_test"
-          for db in osiris_test osiris_rust_test; do
-            for pass in 1 2; do
-              for f in db/migrations/*.sql; do
-                psql -h localhost -U osiris -d "$db" -v ON_ERROR_STOP=1 -q -f "$f"
-              done
+          psql -h localhost -U osiris -d osiris_test -qc "CREATE DATABASE osiris_psql_test"
+          for pass in 1 2; do
+            for f in db/migrations/*.sql; do
+              psql -h localhost -U osiris -d osiris_psql_test -v ON_ERROR_STOP=1 -q -f "$f"
             done
+            target/release/osiris-server --database-url "$OSIRIS_TEST_DATABASE_URL" migrate
           done
       - name: ONNX modelleri (önbellekli; sabit revizyon + özet doğrulaması)
         uses: actions/cache@v4
         with:
           path: models
-          key: onnx-models-${{ hashFiles('models/download.py') }}
+          key: onnx-models-${{ hashFiles('crates/osiris-pipeline/src/models.rs') }}
       - name: Modelleri indir / doğrula
-        run: python models/download.py
-      - name: Bağımlılıkları kur
-        run: |
-          pip install -e ./osiris-sdk -e ./osiris-collector -e "./osiris-pipeline[embedding,ner]" \
-            -e ./osiris-graph -e ./osiris-query -e ./osiris-alert -e ./osiris-report \
-            -e ./osiris-api uvicorn jsonschema -r tests/contract/requirements.txt
-          rustup toolchain install
-          pip install ./crates/osiris-py
-          for req in plugins/*/requirements.txt; do pip install -r "$req"; done
-      - uses: Swatinem/rust-cache@v2
-      - name: Rust servis ikilisi (osiris-server — API + işçi) + Rust model fixture'ları (NER, embedding)
+        run: target/release/osiris-server models --dir models
+      - name: Entegrasyon + model fixture'ları (NER, embedding)
         env:
           OSIRIS_MODEL_DIR: models
           OSIRIS_REQUIRE_MODELS: "1"
         run: |
-          cargo build --release --locked -p osiris-server
+          cargo test --release --locked -p osiris-server --test integration
           cargo test --release --locked -p osiris-pipeline --test models
-      - name: Entegrasyon + model golden testleri (NER, embedding)
-        env:
-          OSIRIS_MODEL_DIR: models
-          HF_HUB_OFFLINE: "1"
-          OSIRIS_REQUIRE_MODELS: "1"
-          OSIRIS_TEST_RUST_DATABASE_URL: postgresql://osiris:osiris@localhost:5432/osiris_rust_test
-          OSIRIS_SERVER_BIN: target/release/osiris-server
-          OSIRIS_EMBEDDING_MODEL: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-        run: |
-          pytest -q tests/integration -rs
-          pytest -q tests/golden -k "ner or embedding or models_present" -rs
-      - name: Sözleşme (kara kutu) testleri — Rust API (R6, birincil) ve Python API (yedek)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Sözleşme (kara kutu) testleri — gerçek API'ye karşı
         env:
           OSIRIS_API_KEY: ci-contract-admin-key-0123456789abcdef
           OSIRIS_JWT_SECRET: ci-contract-jwt-secret-0123456789abcdef
           OSIRIS_DATABASE_URL: postgresql://osiris:osiris@localhost:5432/osiris_test
           OSIRIS_REDIS_URL: redis://localhost:6379/0
+          OSIRIS_BASE_URL: http://127.0.0.1:8000
           OSIRIS_CONTRACT_API_KEY: ci-contract-admin-key-0123456789abcdef
           OSIRIS_CONTRACT_DESTRUCTIVE: "1"
         run: |
-          target/release/osiris-server api --addr 127.0.0.1:8000 > rust-api.log 2>&1 &
-          uvicorn osiris_api.main:app --host 127.0.0.1 --port 8001 > py-api.log 2>&1 &
-          for port in 8000 8001; do
-            for i in $(seq 60); do curl -sf http://127.0.0.1:$port/health && break; sleep 1; done
-          done
-          OSIRIS_BASE_URL=http://127.0.0.1:8000 pytest -q tests/contract || { cat rust-api.log; exit 1; }
-          OSIRIS_BASE_URL=http://127.0.0.1:8001 pytest -q tests/contract || { cat py-api.log; exit 1; }
-      - name: Python ↔ Rust API eşdeğerliği (aynı istekler, durum + gövde)
-        env:
-          OSIRIS_PARITY_PY_URL: http://127.0.0.1:8001
-          OSIRIS_PARITY_RS_URL: http://127.0.0.1:8000
-          OSIRIS_PARITY_API_KEY: ci-contract-admin-key-0123456789abcdef
-          OSIRIS_PARITY_DATABASE_URL: postgresql://osiris:osiris@localhost:5432/osiris_test
-        run: pytest -q tests/parity || { cat rust-api.log py-api.log; exit 1; }
+          pip install -r tests/contract/requirements.txt
+          target/release/osiris-server api --addr 127.0.0.1:8000 > api.log 2>&1 &
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
+          pytest -q tests/contract || { cat api.log; exit 1; }
+          target/release/osiris-server --database-url "$OSIRIS_DATABASE_URL" audit-verify --limit 100000
 
-  lint:
-    name: Lint (ruff)
+  docker:
+    name: İmaj (distroless) derleme ve duman testi
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Ruff kur
-        run: pip install ruff
-      - name: Lint çalıştır
-        run: ruff check osiris-sdk osiris-collector osiris-pipeline osiris-graph osiris-alert osiris-report osiris-query osiris-api osiris-cli plugins tests tools
-      - name: Döküman link kontrolü
+      - name: Derle
+        run: docker build -f deploy/docker/Dockerfile -t osiris:ci .
+      - name: Duman testi
         run: |
-          python3 - << 'EOF'
-          import re
-          from pathlib import Path
-          bad = []
-          for f in [*Path('.').glob('README*.md'), *Path('docs').glob('*.md')]:
-              # Kod blokları ve satır içi kod bağlantı değildir (regex vb. yanlış pozitif verir)
-              text = re.sub(r'```.*?```', '', f.read_text(), flags=re.S)
-              text = re.sub(r'`[^`\n]*`', '', text)
-              for m in re.finditer(r'\[[^\]]*\]\(([^)]+)\)', text):
-                  link = m.group(1)
-                  if link.startswith(('http', '#', 'mailto:')):
-                      continue
-                  if not (f.parent / link).exists():
-                      bad.append(f'{f} -> {link}')
-          if bad:
-              raise SystemExit('Kırık linkler:\n' + '\n'.join(bad))
-          print('Döküman linkleri OK')
-          EOF
-
-  security-audit:
-    name: Güvenlik denetimi (pip-audit)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: pip-audit kur ve çalıştır
-        run: |
-          pip install pip-audit
-          pip-audit --desc --local --skip-editable || true
-
-  rust:
-    name: Rust (fmt, clippy, test)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      # pyo3-build-config (osiris-py) clippy sırasında Python ≥ 3.11 yorumlayıcısı arar
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Araç zinciri (rust-toolchain.toml)
-        run: rustup toolchain install && rustc --version
-      - uses: Swatinem/rust-cache@v2
-      - name: Biçim
-        run: cargo fmt --all --check
-      - name: Clippy (uyarı = hata)
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Testler (fixtures/ altın verileri dahil)
-        run: cargo test --workspace --exclude osiris-py --locked
+          docker run --rm osiris:ci --version
+          docker run --rm --entrypoint osiris osiris:ci plugins
+          docker run --rm osiris:ci api 2>&1 | grep -q "OSIRIS_API_KEY tanımlı değil"
+          docker image ls osiris:ci
 
   cargo-deny:
     name: Rust bağımlılık denetimi (cargo-deny)
@@ -216,6 +113,47 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+
+  tools-and-docs:
+    name: Araçlar, sözleşme testleri lint'i, doküman linkleri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Bağımlılıklar
+        run: pip install ruff -r tools/requirements.txt -r tests/contract/requirements.txt
+      - name: Ruff (sözleşme testleri + geliştirme araçları)
+        run: ruff check tests tools plugins/username-search/tools
+      - name: Üretilmiş tablolar güncel mi (bs4 → content_hash, feedparser → rss)
+        run: |
+          python tools/gen_html_tables.py --check
+          python tools/gen_feed_tables.py --check
+      - name: Döküman link kontrolü
+        run: |
+          python3 - << 'PYEOF'
+          import re
+          from pathlib import Path
+          bad = []
+          for f in [*Path('.').glob('README*.md'), *Path('docs').glob('*.md'), *Path('.').glob('*/README.md')]:
+              # Kod blokları ve satır içi kod bağlantı değildir (regex vb. yanlış pozitif verir)
+              text = re.sub(r'```.*?```', '', f.read_text(), flags=re.S)
+              text = re.sub(r'`[^`\n]*`', '', text)
+              for m in re.finditer(r'\[[^\]]*\]\(([^)]+)\)', text):
+                  link = m.group(1)
+                  if link.startswith(('http', '#', 'mailto:')):
+                      continue
+                  if not (f.parent / link.split('#')[0]).exists():
+                      bad.append(f'{f} -> {link}')
+          if bad:
+              raise SystemExit('Kırık linkler:\n' + '\n'.join(bad))
+          print('Döküman linkleri OK')
+          PYEOF
+      - name: pip-audit (sözleşme testleri ve araç bağımlılıkları)
+        run: |
+          pip install pip-audit
+          pip-audit -r tests/contract/requirements.txt -r tools/requirements.txt
 
   web-ui-build:
     name: Web UI derleme

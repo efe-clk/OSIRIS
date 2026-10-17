@@ -1,0 +1,6 @@
+# Kod üretim araçları (geliştirme; uygulama kodu değil) — Rust tablolarının kaynağı.
+# gen_html_tables.py: bs4/html.parser (content_hash temizleyicisi) → crates/osiris-hash/src/html/tables.rs
+# gen_feed_tables.py: feedparser temizleyici/URL tabloları → crates/osiris-feed/src/feed_tables.rs
+# Sürümler sabittir: değişirse tablolar (ve content_hash sözleşmesi) değişebilir.
+beautifulsoup4==4.15.0
+feedparser==6.0.14
