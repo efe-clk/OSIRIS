@@ -55,6 +55,31 @@ pub async fn connect(url: &str) -> Result<PgPool, Error> {
         .await
 }
 
+/// `db/migrations/*.sql` (derleme zamanında gömülü). Hepsi tekrar çalıştırılabilir (`IF NOT
+/// EXISTS`, istisna yakalayan `DO` blokları): yeni ve mevcut veritabanında aynı sonuç.
+pub const MIGRATIONS: [(&str, &str); 6] = [
+    ("001_init.sql", include_str!("../../../db/migrations/001_init.sql")),
+    ("002_roles.sql", include_str!("../../../db/migrations/002_roles.sql")),
+    (
+        "003_audit_chain_version.sql",
+        include_str!("../../../db/migrations/003_audit_chain_version.sql"),
+    ),
+    ("004_retention.sql", include_str!("../../../db/migrations/004_retention.sql")),
+    ("005_embedding.sql", include_str!("../../../db/migrations/005_embedding.sql")),
+    ("006_r7_cleanup.sql", include_str!("../../../db/migrations/006_r7_cleanup.sql")),
+];
+
+/// Tüm migration'ları sırayla uygular (`osiris-server migrate`). Dönen: uygulanan dosyalar.
+pub async fn migrate(pool: &PgPool) -> Result<Vec<&'static str>, Error> {
+    let mut done = Vec::new();
+    for (name, sql) in MIGRATIONS {
+        sqlx::raw_sql(sql).execute(pool).await?;
+        tracing::info!("migration uygulandı: {name}");
+        done.push(name);
+    }
+    Ok(done)
+}
+
 /// Tembel havuz (API/CLI): DB kapalıyken de süreç başlar; her istek en çok `acquire` bekler
 /// (Python'daki istek başına `connect_timeout` karşılığı).
 pub fn connect_lazy(url: &str, max_connections: u32, acquire: Duration) -> Result<PgPool, Error> {
@@ -87,7 +112,7 @@ pub fn vector_literal(v: &[f32]) -> String {
     format!("[{}]", parts.join(","))
 }
 
-/// Migration 005 uygulanmış mı?
+/// Sütun var mı? (tanılama; R7'den beri tüm migration'lar zorunlu)
 pub async fn has_column(pool: &PgPool, table: &str, column: &str) -> Result<bool, Error> {
     Ok(sqlx::query(
         "SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2",
@@ -120,13 +145,9 @@ const INSERT_ITEM_VEC: &str = insert_item!(", embedding_v2, embedding_model", ",
 
 /// `ProcessingPipeline.store`: öğe (ON CONFLICT content_hash → mevcut id), varlıklar ve
 /// bağlantılar tek işlemde. Dönen: öğe kimliği (tekrarsa mevcut olanınki).
-pub async fn store(
-    pool: &PgPool,
-    item: &NewItem,
-    embedding_v2: bool,
-) -> Result<Option<String>, Error> {
+pub async fn store(pool: &PgPool, item: &NewItem) -> Result<Option<String>, Error> {
     let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
-    let with_vec = embedding_v2 && item.embedding.is_some();
+    let with_vec = item.embedding.is_some();
     let sql = if with_vec { INSERT_ITEM_VEC } else { INSERT_ITEM };
     let mut q = sqlx::query(sql)
         .bind(item.source_id.clone().unwrap_or_default())
@@ -258,15 +279,9 @@ pub async fn purge_expired(
     batch: i64,
     max_batches: usize,
 ) -> Result<(u64, u64), Error> {
-    let per_source = has_column(pool, "sources", "retention_days").await?;
-    let sql = if per_source {
-        "DELETE FROM items WHERE id IN (SELECT i.id FROM items i LEFT JOIN sources s ON s.id = i.source_id \
+    let sql = "DELETE FROM items WHERE id IN (SELECT i.id FROM items i LEFT JOIN sources s ON s.id = i.source_id \
          WHERE COALESCE(s.retention_days, $1) > 0 \
-         AND i.collected_at < NOW() - make_interval(days => COALESCE(s.retention_days, $1)) LIMIT $2)"
-    } else {
-        "DELETE FROM items WHERE id IN (SELECT id FROM items WHERE $1 > 0 \
-         AND collected_at < NOW() - make_interval(days => $1) LIMIT $2)"
-    };
+         AND i.collected_at < NOW() - make_interval(days => COALESCE(s.retention_days, $1)) LIMIT $2)";
     let batch = batch.clamp(1, 10_000);
     let mut deleted = 0;
     for _ in 0..max_batches {
@@ -309,8 +324,8 @@ pub struct AuditAppend {
     pub chain_version: i64,
 }
 
-/// `osiris.audit.append_audit` — append-only, hash zincirli (SOZLESME §2). Danışma kilidi
-/// zincirin eşzamanlı yazıcılarla çatallanmasını önler; migration 003 yoksa v1 yazılır.
+/// Denetim kaydı ekler — append-only, hash zincirli, v2 (SOZLESME §2). Danışma kilidi zincirin
+/// eşzamanlı yazıcılarla çatallanmasını önler.
 pub async fn append_audit(
     pool: &PgPool,
     user_id: Option<&str>,
@@ -319,7 +334,7 @@ pub async fn append_audit(
     detail: &osiris_hash::Json,
 ) -> Result<AuditAppend, Error> {
     use osiris_hash::audit::{CURRENT_CHAIN_VERSION, GENESIS, canonical_payload, chain_hash};
-    use osiris_hash::canonical::{jcs_safe, py_dumps};
+    use osiris_hash::canonical::{jcs, jcs_safe};
     use osiris_hash::{Json, truncate_chars};
 
     let protocol = |m: &str| Error::Protocol(m.to_owned());
@@ -342,13 +357,7 @@ pub async fn append_audit(
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext('osiris_audit_chain'))")
         .execute(&mut *tx)
         .await?;
-    let has_version: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM information_schema.columns \
-         WHERE table_name = 'audit_logs' AND column_name = 'chain_version')",
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-    let version = if has_version { CURRENT_CHAIN_VERSION } else { 1 };
+    let version = CURRENT_CHAIN_VERSION;
     let prev: Option<String> =
         sqlx::query_scalar("SELECT hash::text FROM audit_logs ORDER BY id DESC LIMIT 1")
             .fetch_optional(&mut *tx)
@@ -358,26 +367,20 @@ pub async fn append_audit(
         .map_err(|e| protocol(&e.0))?;
     let digest = chain_hash(Some(&prev_hash), &payload);
     let stored_prev = (prev_hash != GENESIS).then_some(prev_hash.as_str());
-    let q = if has_version {
-        sqlx::query(
-            "INSERT INTO audit_logs (user_id, action, resource, detail, prev_hash, hash, chain_version) \
-             VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)",
-        )
-    } else {
-        sqlx::query(
-            "INSERT INTO audit_logs (user_id, action, resource, detail, prev_hash, hash) \
-             VALUES ($1, $2, $3, $4::jsonb, $5, $6)",
-        )
-    };
-    let q = q
-        .bind(user_id)
-        .bind(action)
-        .bind(resource)
-        .bind(py_dumps(&detail))
-        .bind(stored_prev)
-        .bind(&digest);
-    let q = if has_version { q.bind(version as i32) } else { q };
-    q.execute(&mut *tx).await?;
+    let stored_detail = jcs(&detail).map_err(|e| protocol(&e.0))?;
+    sqlx::query(
+        "INSERT INTO audit_logs (user_id, action, resource, detail, prev_hash, hash, chain_version) \
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)",
+    )
+    .bind(user_id)
+    .bind(action)
+    .bind(resource)
+    .bind(stored_detail)
+    .bind(stored_prev)
+    .bind(&digest)
+    .bind(version as i16)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(AuditAppend { prev_hash, hash: digest, chain_version: version })
 }
@@ -511,67 +514,21 @@ pub async fn set_embedding(
     }
 }
 
-/// Gölge karşılaştırma için Python'un yazdığı öğe.
-#[derive(Debug, Clone)]
-pub struct StoredItem {
-    pub id: String,
-    pub raw_content: String,
-    pub cleaned_content: String,
-    pub content_hash: String,
-    pub language: String,
-    pub embedding: Option<Vec<f32>>,
-    pub entities: Vec<(String, String)>,
-}
-
-/// Son `minutes` dakikada toplanan öğeler (en fazla `limit`).
-pub async fn recent_items(
-    pool: &PgPool,
-    minutes: i64,
-    limit: i64,
-) -> Result<Vec<StoredItem>, Error> {
-    let rows = sqlx::query(
-        "SELECT id::text, COALESCE(raw_content,''), COALESCE(cleaned_content,''), content_hash, \
-         COALESCE(language,''), embedding_v2::text FROM items \
-         WHERE collected_at > NOW() - make_interval(mins => $1) ORDER BY collected_at DESC LIMIT $2",
-    )
-    .bind(minutes as i32)
-    .bind(limit)
-    .fetch_all(pool)
-    .await?;
-    let mut out = Vec::new();
-    for r in rows {
-        let id: String = r.get(0);
-        let ents = sqlx::query(
-            "SELECT e.type::text, e.value FROM item_entities ie JOIN entities e ON e.id = ie.entity_id \
-             WHERE ie.item_id = $1::uuid",
-        )
-        .bind(&id)
-        .fetch_all(pool)
-        .await?
-        .into_iter()
-        .map(|e| (e.get(0), e.get(1)))
-        .collect();
-        let emb: Option<String> = r.get(5);
-        out.push(StoredItem {
-            id,
-            raw_content: r.get(1),
-            cleaned_content: r.get(2),
-            content_hash: r.get(3),
-            language: r.get(4),
-            embedding: emb.map(|s| {
-                s.trim_matches(['[', ']'])
-                    .split(',')
-                    .filter_map(|x| x.trim().parse().ok())
-                    .collect()
-            }),
-            entities: ents,
-        });
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn migration_listesi_tam() {
+        let mut on_disk: Vec<String> =
+            std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../db/migrations"))
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .filter(|n| n.ends_with(".sql"))
+                .collect();
+        on_disk.sort();
+        let embedded: Vec<&str> = super::MIGRATIONS.iter().map(|(n, _)| *n).collect();
+        assert_eq!(on_disk, embedded, "yeni migration MIGRATIONS listesine eklenmeli");
+    }
+
     #[test]
     fn vektor_metni() {
         assert_eq!(super::vector_literal(&[0.1, -1.0, 3e-8]), "[0.1,-1.0,3e-8]");

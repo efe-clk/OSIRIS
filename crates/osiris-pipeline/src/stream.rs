@@ -55,7 +55,6 @@ pub struct Consumer {
     pub legacy: Option<String>,
     /// `XAUTOCLAIM` boşta kalma eşiği (ms; varsayılan 300 000).
     pub claim_idle_ms: u64,
-    embedding_v2: Option<bool>,
     group_ready: bool,
 }
 
@@ -75,7 +74,6 @@ impl Consumer {
             consumer,
             legacy: Some(LEGACY_LIST.into()),
             claim_idle_ms: CLAIM_IDLE_MS,
-            embedding_v2: None,
             group_ready: false,
         }
     }
@@ -86,17 +84,8 @@ impl Consumer {
             tracing::debug!("database_url yok, depolama atlandı");
             return Ok(None);
         };
-        if self.embedding_v2 != Some(true) {
-            self.embedding_v2 = Some(
-                osiris_db::has_column(&pool, "items", "embedding_v2")
-                    .await
-                    .map_err(StoreErr::Db)?,
-            );
-        }
         let item = self.pipeline.new_item(&p);
-        let id = osiris_db::store(&pool, &item, self.embedding_v2 == Some(true))
-            .await
-            .map_err(StoreErr::Db)?;
+        let id = osiris_db::store(&pool, &item).await.map_err(StoreErr::Db)?;
         tracing::info!("Depolandı: {} ({})", &p.content_hash[..12], id.as_deref().unwrap_or("-"));
         Ok(id)
     }

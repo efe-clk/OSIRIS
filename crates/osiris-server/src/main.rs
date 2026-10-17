@@ -1,8 +1,8 @@
 //! `osiris-server` — OSIRIS Rust servis ikilisi.
 //!
-//! Alt komutlar: `api` (REST API, R6), `pipeline` (Stream işçisi), `shadow` (Python
-//! çıktısıyla gölge karşılaştırma), `collector` (zamanlayıcı), `collect` (tek seferlik
-//! toplama), `purge`. `OSIRIS_LOG_FORMAT=json` → yapılandırılmış JSON log.
+//! Alt komutlar: `api` (REST API), `pipeline` (Stream işçisi), `collector` (zamanlayıcı),
+//! `collect` (tek seferlik toplama), `purge`, `migrate`, `models`, `audit-verify`, `health`.
+//! `OSIRIS_LOG_FORMAT=json` → yapılandırılmış JSON log.
 //! Ortam değişkenleri Python servisleriyle aynıdır (`OSIRIS_DATABASE_URL`,
 //! `OSIRIS_REDIS_URL`, `OSIRIS_EMBEDDING_MODEL`, `OSIRIS_MODEL_DIR`, `OSIRIS_NER`,
 //! `OSIRIS_RETENTION_DAYS`, `OSIRIS_RETENTION_INTERVAL`, `OSIRIS_PIPELINE_CONSUMER`).
@@ -70,17 +70,6 @@ enum Cmd {
         #[arg(long, default_value = stream::LEGACY_LIST)]
         queue: String,
     },
-    /// Python işçisinin yazdığı öğeleri Rust hattıyla yeniden hesaplayıp karşılaştırır (yazmaz)
-    Shadow {
-        #[arg(long, default_value_t = 60)]
-        minutes: i64,
-        #[arg(long, default_value_t = 500)]
-        limit: i64,
-        #[arg(long = "loop")]
-        run_loop: bool,
-        #[arg(long, default_value_t = 300)]
-        interval: u64,
-    },
     /// Collector servisi; zamanlama yalnızca OSIRIS_SCHEDULER=on ile
     Collector {
         #[arg(long, env = "OSIRIS_SCHEDULER", default_value = "off")]
@@ -105,6 +94,8 @@ enum Cmd {
         #[arg(long, value_parser = ["embedding", "ner"])]
         only: Option<String>,
     },
+    /// Veritabanı migration'larını uygular (gömülü db/migrations; tekrar çalıştırılabilir)
+    Migrate,
     /// Saklama süresi dolan öğeleri ve yetim varlıkları siler
     Purge,
     /// Denetim zincirinin son N kaydını doğrular (bozuksa çıkış 1)
@@ -169,8 +160,10 @@ async fn shutdown_signal() {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let level = if cli.verbose { "debug" } else { "info" };
-    let filter =
-        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| level.into());
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        // PostgreSQL NOTICE'leri (migration'larda "zaten var") varsayılan logu kirletmesin
+        format!("{level},sqlx::postgres::notice=warn").into()
+    });
     let fmt = tracing_subscriber::fmt().with_writer(std::io::stderr).with_env_filter(filter);
     if std::env::var("OSIRIS_LOG_FORMAT").is_ok_and(|v| v.eq_ignore_ascii_case("json")) {
         fmt.json().flatten_event(true).with_current_span(false).init();
@@ -235,6 +228,13 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        Cmd::Migrate => {
+            let pool = pool(&cli.database_url)
+                .await?
+                .context("--database-url (OSIRIS_DATABASE_URL) gerekli")?;
+            let done = osiris_db::migrate(&pool).await?;
+            println!("{} migration uygulandı: {}", done.len(), done.join(", "));
+        }
         Cmd::AuditVerify { limit } => {
             let pool = pool(&cli.database_url)
                 .await?
@@ -278,26 +278,6 @@ async fn main() -> anyhow::Result<()> {
                 println!("{done} öğe yeniden vektörleştirildi");
                 return Ok(());
             }
-            // Geçiş adımı 1 (OSIRIS_PIPELINE_SHADOW=1): kuyruğa dokunmadan, Python işçisinin
-            // yazdıklarını periyodik olarak yeniden hesaplayıp karşılaştır.
-            if matches!(
-                std::env::var("OSIRIS_PIPELINE_SHADOW").unwrap_or_default().to_lowercase().as_str(),
-                "1" | "on" | "true"
-            ) {
-                let pool = pool.context("gölge mod için OSIRIS_DATABASE_URL gerekli")?;
-                tracing::info!("Gölge mod: kuyruk tüketilmiyor; Python çıktısı karşılaştırılıyor");
-                loop {
-                    match osiris_pipeline::shadow::compare_recent(&pipeline, &pool, 15, 1000).await
-                    {
-                        Ok(r) if r.clean() => {
-                            tracing::info!(report = %r.to_json(), "gölge: uyuşmazlık yok")
-                        }
-                        Ok(r) => tracing::warn!(report = %r.to_json(), "gölge: UYUŞMAZLIK"),
-                        Err(e) => tracing::error!("gölge karşılaştırma başarısız: {e}"),
-                    }
-                    tokio::time::sleep(Duration::from_secs(300)).await;
-                }
-            }
             let con = redis_con(&cli.redis_url).await?;
             let mut consumer = stream::Consumer::new(pipeline, pool.clone(), con, consumer_name());
             consumer.stream = stream_key;
@@ -322,22 +302,6 @@ async fn main() -> anyhow::Result<()> {
                 let n = consumer.run(batch as usize).await;
                 if n > 0 {
                     tracing::info!("{n} kayıt işlendi");
-                }
-                tokio::time::sleep(Duration::from_secs(interval)).await;
-            }
-        }
-        Cmd::Shadow { minutes, limit, run_loop, interval } => {
-            let pool = pool(&cli.database_url)
-                .await?
-                .context("shadow için OSIRIS_DATABASE_URL gerekli")?;
-            let pipeline = tokio::task::spawn_blocking(Pipeline::from_env).await?;
-            loop {
-                let report =
-                    osiris_pipeline::shadow::compare_recent(&pipeline, &pool, minutes, limit)
-                        .await?;
-                println!("{}", report.to_json());
-                if !run_loop {
-                    std::process::exit(if report.clean() { 0 } else { 1 });
                 }
                 tokio::time::sleep(Duration::from_secs(interval)).await;
             }

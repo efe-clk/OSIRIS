@@ -3,13 +3,11 @@
 //! Stream'den oku → temizle (`osiris-hash`) → dil (lingua) → regex (`osiris-extract`) + ONNX
 //! NER → konu sınıflandırma → embedding (fastembed) → depola (`osiris-db`) → `XACK`+`XDEL`.
 //! Kuyruk kuralları SOZLESME §5 ile aynıdır (eski LIST boşaltma, `XAUTOCLAIM`, ölü-mektup).
-//! [`shadow`] Python'un yazdığı öğeleri yeniden hesaplayıp karşılaştırır (geçiş doğrulaması).
 
 pub mod embed;
 pub mod lang;
 pub mod models;
 pub mod ner;
-pub mod shadow;
 pub mod stream;
 
 use osiris_db::NewItem;

@@ -676,8 +676,6 @@ macro_rules! sources_sql {
     };
 }
 const SOURCES: &str = sources_sql!("retention_days");
-// Migration 004 öncesi DB'de sütun yok → NULL (API önce dağıtılabilir)
-const SOURCES_NO_RETENTION: &str = sources_sql!("NULL::int AS retention_days");
 
 /// Filtreler: `enabled`, `plugin_id`, `q` (ad/URL alt-metin). Sayfalama: `limit` (1-200), `offset`.
 #[utoipa::path(get, path = "/sources", tag = "Sources",
@@ -697,9 +695,7 @@ pub async fn list_sources(
     // LIKE jokerleri etkisizleştirilir
     let needle = p.text("q").map(|s| format!("%{}%", osiris_query::escape_like(&chars(s, 200))));
     let fail = |e: sqlx::Error| ApiError::internal("Kaynaklar okunamadı", e);
-    let sql =
-        if st.has_retention_column().await.map_err(fail)? { SOURCES } else { SOURCES_NO_RETENTION };
-    let text: String = sqlx::query_scalar(sql)
+    let text: String = sqlx::query_scalar(SOURCES)
         .bind(enabled)
         .bind(plugin_id)
         .bind(needle)
@@ -765,7 +761,7 @@ impl Validate for SourceRequest {
 
 /// Kaynak oluştur.
 #[utoipa::path(post, path = "/sources", tag = "Sources", request_body = SourceRequest,
-    responses((status = 200), (status = 400), (status = 404), (status = 503, description = "migration 004 yok")))]
+    responses((status = 200), (status = 400), (status = 404)))]
 pub async fn create_source(
     State(st): State<Shared>,
     headers: HeaderMap,
@@ -780,24 +776,11 @@ pub async fn create_source(
         return Err(ApiError::not_found("Plugin bulunamadı"));
     }
     let fail = |e: sqlx::Error| ApiError::internal("Kaynak oluşturulamadı", e);
-    let has_retention = st.has_retention_column().await.map_err(fail)?;
-    if req.retention_days.is_some() && !has_retention {
-        return Err(ApiError::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "retention_days için migration 004 uygulanmamış",
-        ));
-    }
     let tags: Vec<String> = req.tags.iter().take(20).map(|t| chars(t, 100)).collect();
     let metadata = json!({"config": req.config}).to_string();
-    let sql = if has_retention {
-        "INSERT INTO sources (name, url, network_type, plugin_id, schedule, priority, enabled, tags, \
-         metadata, retention_days) VALUES ($1, NULLIF($2,''), $3::network_type, $4, NULLIF($5,''), $6, \
-         $7, $8, $9::jsonb, $10) RETURNING id::text"
-    } else {
-        "INSERT INTO sources (name, url, network_type, plugin_id, schedule, priority, enabled, tags, \
-         metadata) VALUES ($1, NULLIF($2,''), $3::network_type, $4, NULLIF($5,''), $6, $7, $8, \
-         $9::jsonb) RETURNING id::text"
-    };
+    let sql = "INSERT INTO sources (name, url, network_type, plugin_id, schedule, priority, enabled, \
+               tags, metadata, retention_days) VALUES ($1, NULLIF($2,''), $3::network_type, $4, \
+               NULLIF($5,''), $6, $7, $8, $9::jsonb, $10) RETURNING id::text";
     let q = sqlx::query_scalar::<_, String>(sql)
         .bind(&req.name)
         .bind(&req.url)
@@ -807,8 +790,8 @@ pub async fn create_source(
         .bind(req.priority.0 as i32)
         .bind(req.enabled.0)
         .bind(&tags)
-        .bind(metadata);
-    let q = if has_retention { q.bind(req.retention_days.map(|d| d.0 as i32)) } else { q };
+        .bind(metadata)
+        .bind(req.retention_days.map(|d| d.0 as i32));
     let id = q.fetch_one(&st.pool).await.map_err(fail)?;
     let detail = json!({"plugin": req.plugin_id});
     st.audit(&ident.user, "source.create", Some(&req.name), detail).await;

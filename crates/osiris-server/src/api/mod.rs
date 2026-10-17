@@ -27,7 +27,7 @@ use osiris_graph::Graph;
 use sqlx::PgPool;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
@@ -98,7 +98,6 @@ pub struct AppState {
     pub graph: tokio::sync::Mutex<GraphState>,
     pub metrics: metrics::Metrics,
     limiter: Option<DefaultKeyedRateLimiter<String>>,
-    retention_column: AtomicBool,
 }
 
 pub type Shared = Arc<AppState>;
@@ -114,7 +113,6 @@ impl AppState {
             graph: tokio::sync::Mutex::new(GraphState { graph: Graph::default(), loaded: false }),
             metrics: metrics::Metrics::default(),
             limiter,
-            retention_column: AtomicBool::new(false),
         }
     }
 
@@ -224,18 +222,6 @@ impl AppState {
             self.metrics.audit_failures.fetch_add(1, Ordering::Relaxed);
             tracing::debug!("Denetim kaydı atlandı: {e}");
         }
-    }
-
-    /// Migration 004 uygulanmış mı? (yalnızca olumlu sonuç önbelleklenir)
-    pub async fn has_retention_column(&self) -> Result<bool, sqlx::Error> {
-        if self.retention_column.load(Ordering::Relaxed) {
-            return Ok(true);
-        }
-        let ok = osiris_db::has_column(&self.pool, "sources", "retention_days").await?;
-        if ok {
-            self.retention_column.store(true, Ordering::Relaxed);
-        }
-        Ok(ok)
     }
 
     /// Grafı ilk kullanımda DB'den besler; yükleme başarısızsa sonraki istekte yeniden dener.

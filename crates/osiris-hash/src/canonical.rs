@@ -1,7 +1,5 @@
 //! İki kanonik JSON biçimi (docs/SOZLESME.md §2):
 //! - [`jcs`] — RFC 8785 (audit `chain_version = 2`), Python `rfc8785` 0.1.4 ile aynı.
-//! - [`py_dumps`] — Python `json.dumps(sort_keys=True, separators=(",", ":"),
-//!   ensure_ascii=False)` (audit `chain_version = 1`, yalnızca eski kayıtları doğrulamak için).
 
 use crate::json::{Json, write_str};
 
@@ -173,61 +171,6 @@ fn write_record(out: &mut String, value: &Json) {
         // null, bool, sonlu float, dize: JCS ile aynı (hata veremez)
         other => {
             let _ = write_jcs(out, other);
-        }
-    }
-}
-
-// --------------------------------------------------------------------------- Python v1
-
-/// Python `json.dumps(v, ensure_ascii=False, sort_keys=True, separators=(",", ":"))`.
-pub fn py_dumps(value: &Json) -> String {
-    let mut out = String::new();
-    write_py(&mut out, value);
-    out
-}
-
-fn write_py(out: &mut String, value: &Json) {
-    match value {
-        Json::Null => out.push_str("null"),
-        Json::Bool(true) => out.push_str("true"),
-        Json::Bool(false) => out.push_str("false"),
-        Json::Int(i) => out.push_str(&i.to_string()),
-        Json::BigInt(s) => out.push_str(s),
-        Json::Float(f) => {
-            // json.dumps: allow_nan=True → NaN / Infinity / -Infinity
-            if f.is_nan() {
-                out.push_str("NaN");
-            } else if f.is_infinite() {
-                out.push_str(if *f > 0.0 { "Infinity" } else { "-Infinity" });
-            } else {
-                out.push_str(&py_float_repr(*f));
-            }
-        }
-        Json::Str(s) => write_str(out, s),
-        Json::Array(items) => {
-            out.push('[');
-            for (idx, item) in items.iter().enumerate() {
-                if idx > 0 {
-                    out.push(',');
-                }
-                write_py(out, item);
-            }
-            out.push(']');
-        }
-        Json::Object(entries) => {
-            // Python str karşılaştırması = kod noktası sırası = UTF-8 bayt sırası
-            let mut sorted: Vec<&(String, Json)> = entries.iter().collect();
-            sorted.sort_by(|a, b| a.0.cmp(&b.0));
-            out.push('{');
-            for (idx, (k, v)) in sorted.into_iter().enumerate() {
-                if idx > 0 {
-                    out.push(',');
-                }
-                write_str(out, k);
-                out.push(':');
-                write_py(out, v);
-            }
-            out.push('}');
         }
     }
 }

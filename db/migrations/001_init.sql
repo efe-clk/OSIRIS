@@ -69,7 +69,6 @@ CREATE TABLE IF NOT EXISTS items (
     collected_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     published_at    TIMESTAMPTZ,
     content_hash    CHAR(64) UNIQUE,   -- Yineleme önleme (SHA-256)
-    embedding       VECTOR(1536),      -- pgvector
     metadata        JSONB,
     tags            TEXT[]
 );
@@ -77,7 +76,8 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE INDEX IF NOT EXISTS idx_items_source_id     ON items (source_id);
 CREATE INDEX IF NOT EXISTS idx_items_collected_at  ON items (collected_at);
 CREATE INDEX IF NOT EXISTS idx_items_language      ON items (language);
-CREATE INDEX IF NOT EXISTS idx_items_embedding     ON items USING hnsw (embedding vector_cosine_ops);
+-- (R7) Eski `embedding VECTOR(1536)` sütunu ve HNSW indeksi kaldırıldı — vektörler
+-- `embedding_v2` (migration 005); mevcut veritabanlarında sütunu 006 siler.
 CREATE INDEX IF NOT EXISTS idx_items_content_fts   ON items USING gin (to_tsvector('simple', cleaned_content));
 
 -- ============================================================

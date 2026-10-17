@@ -2,9 +2,10 @@
 //!
 //! `hash = sha256(utf8(prev + "|" + payload))`, ilk kayıtta `prev = "GENESIS"`.
 //! Kayıt nesnesi tam olarak `{user_id, action, resource, detail}`; `detail` boş/yanlış
-//! değerliyse `{}`. v1 = Python `json.dumps`, v2 = RFC 8785 (`_jsonb_numbers` sonrası).
+//! değerliyse `{}`. Yalnızca v2 = RFC 8785 (`_jsonb_numbers` sonrası); v1 (Python `json.dumps`)
+//! desteği R7'de kullanıcı kararıyla kaldırıldı — v1 kayıt "Bilinmeyen chain_version" olur.
 
-use crate::canonical::{CanonError, jcs, jsonb_numbers, py_dumps};
+use crate::canonical::{CanonError, jcs, jsonb_numbers};
 use crate::json::Json;
 use crate::sha256_hex;
 
@@ -40,7 +41,6 @@ pub fn canonical_payload(
 ) -> Result<String, CanonError> {
     let rec = record(user_id, action, resource, detail);
     match chain_version {
-        1 => Ok(py_dumps(&rec)),
         2 => jcs(&jsonb_numbers(&rec)?),
         v => Err(CanonError(format!("Bilinmeyen chain_version: {v}"))),
     }
@@ -64,7 +64,7 @@ pub struct AuditRow {
     pub detail: Option<Json>,
     pub prev_hash: Option<String>,
     pub hash: Option<String>,
-    /// `None` → 1 (migration 003 öncesi satırlar).
+    /// `None` → 2 (sütun migration 003'ten beri NOT NULL).
     pub chain_version: Option<i64>,
 }
 
@@ -92,7 +92,7 @@ pub fn verify_records(rows: &[AuditRow]) -> Verification {
             &row.action,
             row.resource.as_deref(),
             row.detail.as_ref(),
-            row.chain_version.unwrap_or(1),
+            row.chain_version.unwrap_or(CURRENT_CHAIN_VERSION),
         ) {
             Ok(p) => p,
             Err(e) => return fail(checked, format!("kanonikleştirme: {e}")),

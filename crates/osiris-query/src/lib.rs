@@ -96,11 +96,10 @@ macro_rules! semantic_sql {
         )
     };
 }
-const SEMANTIC_V2: &str = semantic_sql!("embedding_v2");
-const SEMANTIC_V1: &str = semantic_sql!("embedding");
+const SEMANTIC: &str = semantic_sql!("embedding_v2");
 
-/// `semantic_search`: pgvector kosinüs; 384 boyut → `embedding_v2` (R3/K5), diğerleri eski
-/// `embedding` sütunu.
+/// `semantic_search`: pgvector kosinüs, `embedding_v2` (384 boyut, R3/K5). Eski 1536 boyutlu
+/// `embedding` sütunu R7'de (migration 006) kaldırıldı.
 pub async fn semantic_search(
     pool: &PgPool,
     embedding: &[f64],
@@ -110,11 +109,10 @@ pub async fn semantic_search(
     if embedding.is_empty() {
         return Err(invalid("embedding boş olamaz"));
     }
-    if embedding.len() > 4096 || !embedding.iter().all(|x| x.is_finite()) {
-        return Err(invalid("embedding geçersiz"));
+    if embedding.len() != 384 || !embedding.iter().all(|x| x.is_finite()) {
+        return Err(invalid("embedding geçersiz (384 boyutlu sonlu vektör olmalı)"));
     }
-    let sql = if embedding.len() == 384 { SEMANTIC_V2 } else { SEMANTIC_V1 };
-    rows(sqlx::query_scalar(sql).bind(vector_literal(embedding)).bind(limit), pool).await
+    rows(sqlx::query_scalar(SEMANTIC).bind(vector_literal(embedding)).bind(limit), pool).await
 }
 
 /// ILIKE jokerlerini etkisizleştirir (`\` kaçış karakteriyle).
