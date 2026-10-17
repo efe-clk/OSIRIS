@@ -293,3 +293,19 @@ def test_resolve_proxy_operator_env_wins(monkeypatch) -> None:
         monkeypatch.setenv("OSIRIS_TOR_SOCKS", bad)
         with pytest.raises(ValueError):
             resolve_proxy(None, None, "OSIRIS_TOR_SOCKS", 9050, "SOCKS5")
+
+
+@pytest.mark.parametrize("url", [
+    "http://127.0.0.1\\x.saldirgan.example/",   # urllib3 127.0.0.1'e bağlanır (E14)
+    "http://example.com\\@127.0.0.1/",
+    "http://example.com/\ta",
+    "http://exa\nmple.com/",
+    "http://example.com/\x00",
+])
+def test_parser_differential_chars_rejected(monkeypatch, url: str) -> None:
+    import osiris.security as sec
+
+    # Saldırganın joker DNS kaydı her adı genel bir IP'ye çözer
+    monkeypatch.setattr(sec, "_host_ips", lambda h: ["93.184.216.34"])
+    with pytest.raises(ValueError, match="geçersiz karakter"):
+        assert_safe_url(url)

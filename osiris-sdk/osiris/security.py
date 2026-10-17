@@ -113,15 +113,29 @@ def safe_create_connection(host: str, port: int, timeout: float = 15) -> socket.
     raise last_exc or OSError(f"Bağlanılamadı: {host}")
 
 
+def _ambiguous_url_chars(url: str) -> bool:
+    """İstemci (urllib3) ile ``urlparse``'ın farklı böldüğü karakterler (E14).
+
+    Ters eğik çizgi urllib3'te yetki bölümünü bitirir, ``urlparse``'ta bitirmez:
+    ``http://127.0.0.1\\x.saldirgan.example/`` denetimde saldırganın alan adı gibi
+    görünür, istek ise 127.0.0.1'e gider. Kontrol karakterleri ``urlparse``'ta silinir,
+    istemcide silinmez.
+    """
+    return any(c == "\\" or c < " " or c == "\x7f" for c in url)
+
+
 def assert_safe_url(url: str, *, allow_onion: bool = False) -> str:
     """URL'yi SSRF'e karşı doğrular. Geçersizse ValueError yükseltir.
 
     - http/https zorunlu (onion için allow_onion ile .onion host'una izin)
     - kullanıcı bilgisi (user:pass@) yasak
+    - ters eğik çizgi / kontrol karakteri yasak (ayrıştırıcı farkı, E14)
     - özel/iç IP ve localhost yasak
     """
     if not url or len(url) > 2048:
         raise ValueError("URL boş veya çok uzun")
+    if _ambiguous_url_chars(url.strip()):
+        raise ValueError("URL geçersiz karakter içeriyor")
     parsed = urlparse(url.strip())
     if parsed.scheme not in _ALLOWED_SCHEMES:
         raise ValueError(f"İzin verilmeyen şema: {parsed.scheme!r}")
