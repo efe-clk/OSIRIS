@@ -2498,6 +2498,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "osiris-query"
+version = "0.1.0"
+dependencies = [
+ "osiris-db",
+ "osiris-hash",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+]
+
+[[package]]
 name = "osiris-queue"
 version = "0.1.0"
 dependencies = [

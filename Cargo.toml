@@ -27,6 +27,7 @@ osiris-collector = { path = "crates/osiris-collector" }
 osiris-graph = { path = "crates/osiris-graph" }
 osiris-report = { path = "crates/osiris-report" }
 osiris-alert = { path = "crates/osiris-alert" }
+osiris-query = { path = "crates/osiris-query" }
 ammonia = "4.2.4"
 anyhow = "1.0.104"
 async-trait = "0.1.92"
