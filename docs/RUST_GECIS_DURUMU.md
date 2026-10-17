@@ -11,7 +11,7 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
 | R4 — Rust iskeleti + PyO3 köprüsü | ✅ Tamamlandı | `master` |
 | R5 — Veri katmanı Rust'ta | ✅ Tamamlandı (canlı geçiş operatörde) | `master` |
 | R6 — API, CLI ve analiz katmanı Rust'ta | ✅ Tamamlandı (canlı geçiş operatörde) | `master` |
-| R7 — Temizlik ve sadeleştirme | ⏳ Başlamadı | — |
+| R7 — Temizlik ve sadeleştirme | ✅ Tamamlandı — sürüm 1.0.0-rc (canlı yükseltme operatörde) | `master` |
 
 ## Kararlar (kullanıcı onayı, 2026-10-16)
 
@@ -88,7 +88,7 @@ Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANT
    Sırası önemli değil: Migration'lar uygulanmadan API güncellenirse audit v1'e düşer, `/sources` da `retention_days` olmadan çalışır.
 2. `.env` içinde `OSIRIS_RETENTION_DAYS` değerini gözden geçir. Varsayılan **180 gün**. Temizlik ilk kez çalıştığında 180 günden eski öğeler **kalıcı olarak silinir**. İstemiyorsan önce `0` yap.
 3. Temizliği çalıştıran bir pipeline servisi compose'da yok (E1). İki yol var: `osiris-pipeline --loop` çalıştırmak ya da n8n/cron ile `POST /api/admin/retention/run` uç noktasını tetiklemek.
-4. Sözleşme testleri canlıya karşı güvenle çalıştırılabilir (`OSIRIS_CONTRACT_DESTRUCTIVE` verme): `OSIRIS_BASE_URL=https://<sunucu>:8443/api OSIRIS_CONTRACT_API_KEY=… OSIRIS_CONTRACT_VERIFY_TLS=0 pytest tests/contract`. Testler `contract-*` adlı kullanıcılar bırakır, anahtarları iptal edilmiş olur.
+4. Sözleşme testleri canlıya karşı güvenle çalıştırılabilir (`OSIRIS_CONTRACT_DESTRUCTIVE` verme): `OSIRIS_BASE_URL=https://<sunucu>:8443/api OSIRIS_CONTRACT_API_KEY=… OSIRIS_CONTRACT_VERIFY_TLS=0 pytest tests/contract`. Testler `contract-*` adlı kullanıcılar bırakır, anahtarları iptal edilmiş olur. *(R7 notu: Nginx IP hız sınırı nedeniyle paketi doğrudan API portuna — `http://127.0.0.1:8001` — koşun.)*
 
 **Kalanlar**
 - E1 → R3'te kapandı (kullanıcı: kuyruğu boşaltan bir şey yok; `worker` profilli servis eklendi).
@@ -399,13 +399,87 @@ olarak Rust'a taşındı; yeni uç eklenmedi. API, Python ile birebir aynı 26 u
 3. Geçiş: `docker compose --profile api up -d osiris-api` (aynı konteyner adı, Rust imajıyla yeniden
    oluşturulur) → `docker compose restart nginx` (Nginx upstream IP'sini başlangıçta çözer).
 4. Doğrula: `curl -sk https://localhost:8443/api/health`; isteğe bağlı sözleşme testleri
-   (yıkıcı OLMAYAN): `OSIRIS_BASE_URL=https://localhost:8443/api OSIRIS_CONTRACT_VERIFY_TLS=0
-   OSIRIS_CONTRACT_API_KEY=… pytest -q tests/contract`. Loglar JSON: `docker compose logs -f osiris-api`.
+   (yıkıcı OLMAYAN): `OSIRIS_BASE_URL=http://127.0.0.1:8001 OSIRIS_CONTRACT_API_KEY=… pytest -q
+   tests/contract` (Nginx üzerinden değil — IP hız sınırına takılır). Loglar JSON: `docker compose logs -f osiris-api`.
 5. n8n: `docker compose up -d n8n` (yeni ortam değişkeni), iş akışını `deploy/n8n/` dosyasından yeniden
    içe aktarın ve **Ayarlar** düğümünde `feed_url`/`query` değerlerini girin.
 6. **Geri dönüş:** `docker compose stop osiris-api && docker compose --profile api-python up -d --build
    osiris-api-python && docker compose restart nginx` (Python API `osiris-api` adını devralır; ikisini
    aynı anda çalıştırmayın).
 
-**Sıradaki:** R7 — Python modüllerinin ve `osiris-py` köprüsünün silinmesi, eski `embedding` sütunu
-ve audit v1 desteğinin (onayla) kaldırılması, tek imaj, dokümanların Rust'a göre yeniden yazılması.
+**Sıradaki:** R7 (aşağıda).
+
+## R7 (2026-10-17)
+
+**Kararlar (kullanıcı onayı)**
+- Eski `items.embedding VECTOR(1536)` sütunu **silindi** (migration 006).
+- Denetim zinciri v1 desteği **tamamen kaldırıldı**: eski v1 kayıtlar tabloda kalır, artık
+  doğrulanmaz ("Bilinmeyen chain_version: 1").
+- Python geri dönüş yolları (`worker-python`, `api-python`, gölge karşılaştırma) **silindi**
+  (kullanıcı: canlı R5/R6 geçişleri yapıldı).
+
+**Yapılanlar**
+- **Python uygulama kodu silindi** (~11 200 satır): `osiris-*` paketleri, `osiris-sdk`, plugin
+  `collector.py`'leri ve `requirements.txt`'leri, `crates/osiris-py` (PyO3 köprüsü), Python
+  golden/entegrasyon/eşdeğerlik testleri, `Dockerfile.api` / `Dockerfile.pipeline`, kök
+  `pyproject.toml`, `models/download.py`. Repoda kalan Python: `tests/contract/` (planın
+  öngördüğü kara kutu paketi) ve geliştirme araçları (`tools/gen_*.py` — bs4/feedparser'dan
+  Rust tablosu üretir; `plugins/username-search/tools/build_full_db.py` — site DB'si). Bunlar
+  uygulama kodu değildir; sürümleri `tools/requirements.txt`'de sabit.
+- **Rust'a taşınanlar:** model indirici (`osiris-server models`, sabit revizyon + sha256/git-sha1),
+  denetim zinciri doğrulayıcı (`osiris_db::verify_chain`, `osiris-server audit-verify`),
+  yeniden vektörleştirme (`osiris_pipeline::reembed`), Python entegrasyon testleri
+  (`crates/osiris-server/tests/integration.rs`, 13 test: denetim, saklama, CHECK, depolama, 7 kuyruk
+  senaryosu, embedding + semantik arama).
+- **Migration 006** + `osiris-server migrate` (migration'lar ikiliye gömülü, tekrar
+  çalıştırılabilir; boş, ikinci kez ve eski şemalı DB'de sınandı). 001'den eski sütun/indeks
+  çıkarıldı (aksi hâlde tekrar çalıştırmada silinen sütuna indeks kurmaya çalışıyordu).
+- **Sadeleştirme:** migration 003/004/005 öncesi uyumluluk dalları (v1 yazma, `retention_days`
+  yokken NULL/503, `embedding_v2` sütun denetimi) ve gölge mod kaldırıldı; semantik arama yalnızca
+  384 boyut.
+- **Tek imaj:** `deploy/docker/Dockerfile` → `osiris:1.0.0-rc`, `gcr.io/distroless/cc-debian13:nonroot`
+  (kabuk yok, root değil; ONNX Runtime statik bağlı — glibc + libstdc++ yeterli). 332 MB → 252 MB.
+  Compose: `osiris-api`, `osiris-pipeline`, `osiris-collector` aynı imaj + ortak ayar çapası;
+  `osiris-models` (tek seferlik model indirme, host kullanıcısıyla); `worker`/`full` profilleri.
+- **CI:** Python test işi kalktı; entegrasyon işi Rust (migrate iki yol × 2, entegrasyon + model
+  testleri, Rust API'ye karşı sözleşme, `audit-verify`); yeni imaj derleme + duman testi işi; araç
+  tabloları ve ruff ayrı işte.
+- **Dokümanlar iki dilde yeniden yazıldı:** README, TEKNIK_DOKUMAN / TECHNICAL_DOCUMENT (kurulum,
+  yapılandırma, işletim, yükseltme, yedekleme, sorun giderme), ARCHITECTURE, CONTRIBUTING (Rust
+  geliştirme ortamı, test katmanları, plugin yazma rehberi), API, SOZLESME (doğrulama tablosu,
+  v1 kaldırımı), models/README.
+- **Sürüm 1.0.0-rc** (Cargo çalışma alanı → OpenAPI ve `/metrics`, web UI, imaj etiketleri).
+
+**Sözleşme değişiklikleri**
+- `fixtures/audit`: iki v1 durumu çıkarıldı (v2 durumu aynen).
+- Semantik arama 384 dışı boyutta `Invalid` döner (API'de uç yok).
+
+**Taze kurulum doğrulaması (kabul ölçütü)** — temiz klon, boş Docker birimleri, README "Quick
+Start" adımları birebir (`.env` → `make-certs.sh` → `--profile models run osiris-models` →
+`--profile full up -d --build`):
+- Modeller sıfırdan indi ve özetleri doğrulandı; 8 servis ayakta, `osiris-api` *healthy*;
+  `osiris-server 1.0.0-rc`, OpenAPI sürümü 1.0.0-rc (24 yol), `/ui/` 200.
+- Sözleşme testleri doğrudan API'ye (`127.0.0.1:8001`) karşı **144/144** (yıkıcılar dahil);
+  Nginx üzerinden tek tek istekler 200. *Not:* paketi Nginx'ten koşmak IP başına hız sınırına
+  (10 istek/sn) takılır — bu bilinçli korumadır, paket doğrudan porta koşulmalıdır.
+- `migrate` çalışan DB'de tekrar temiz; `audit-verify` → `ok` (25 kayıt).
+- Gerçek RSS (hnrss, 15 öğe) → kuyruk → işçi: 15 öğe, 15 vektör, NER + regex varlıkları; tam metin
+  arama ve `/entities/top` sonuç döndü.
+
+**⚠ Canlı kurulum için yükseltme adımları (R7)**
+1. **Yedek alın** (migration 006 veri siler): `docker compose exec -T postgresql pg_dump -U osiris
+   -Fc osiris > osiris-oncesi-r7.dump`.
+2. İsteğe bağlı: eski sütundaki vektörlerin yerine yenisi üretilsin diye önce
+   `docker compose run --rm osiris-pipeline pipeline --reembed` (R6 imajıyla).
+3. `git pull && docker compose --profile full build` (yeni imaj adı `osiris:1.0.0-rc`).
+4. `docker compose run --rm osiris-api migrate`.
+5. Eski Python konteynerleri kaldıysa: `docker compose --profile full up -d --remove-orphans`;
+   ardından `docker compose restart nginx`.
+6. Doğrula: `curl -sk https://localhost:8443/api/health`,
+   `docker compose run --rm osiris-api audit-verify` (migration 003 öncesi v1 kayıtlar varsa
+   `ok: false, Bilinmeyen chain_version: 1` beklenir — kullanıcı kararı).
+7. Modeller daha önce `python models/download.py` ile indirildiyse aynı dosyalar geçerlidir;
+   değilse `docker compose --profile models run --rm osiris-models`.
+
+**Rust geçişi tamamlandı.** Sonraki işler (geçiş dışı): uyarıların işçide yayımlanması, 2FA,
+sır kasası, PDF rapor, WASM plugin'leri, :443 geçişi.
