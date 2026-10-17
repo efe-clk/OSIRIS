@@ -1,0 +1,22 @@
+[package]
+name = "osiris-types"
+description = "OSIRIS veri modelleri (schemas/ ile uyumlu) ve Python değer semantiği yardımcıları"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+osiris-hash.workspace = true
+regex.workspace = true
+schemars.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+jsonschema.workspace = true
+
+[lints]
+workspace = true
