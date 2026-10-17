@@ -54,7 +54,8 @@ Katmanlar, veri akışı ve güvenlik modeli için bkz. [docs/ARCHITECTURE.tr.md
 |-------|-----|-----|-------|
 | `crates/` | Rust | Ortak çekirdek: SSRF denetimi, `content_hash` + denetim zinciri, regex varlık çıkarma — Python servisleri `osiris_native` (PyO3) üzerinden kullanır | ✅ R4 (Rust geçişi sürüyor — [plan](docs/RUST_GECIS_PLANI.md)) |
 | `osiris-collector` | Python | Toplama plugin'lerini yönetir | ✅ Çalışıyor |
-| `osiris-pipeline` | Python | Temizleme, NER, sınıflandırma, embedding, depolama | ✅ Çalışıyor (embedding opsiyonel) |
+| `osiris-server` | Rust | Kuyruk işçisi, collector zamanlayıcısı ve 11 plugin (Python işçisinin yerine) | ✅ R5 (varsayılan `worker` profili) |
+| `osiris-pipeline` | Python | Temizleme, NER, sınıflandırma, embedding, depolama | ✅ Yedek işçi (`worker-python` profili) |
 | `osiris-query` | Python | Tam metin + semantik arama | ✅ Çalışıyor |
 | `osiris-graph` | Python | Varlık ilişki grafı (kalıcı) | ✅ Çalışıyor |
 | `osiris-alert` | Python | Uyarı + anomali tespiti | ✅ Çalışıyor |

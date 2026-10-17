@@ -54,7 +54,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for layers, data flow, and the 
 |--------|----------|------|--------|
 | `crates/` | Rust | Shared core: SSRF guard, `content_hash` + audit chain, regex entity extraction — used by the Python services through `osiris_native` (PyO3) | ✅ R4 (Rust migration in progress — [plan](docs/RUST_GECIS_PLANI.md)) |
 | `osiris-collector` | Python | Manages collection plugins | ✅ Working |
-| `osiris-pipeline` | Python | Cleaning, NER, classification, embedding, storage | ✅ Working (embedding optional) |
+| `osiris-server` | Rust | Queue worker, collector scheduler and the 11 plugins (replaces the Python worker) | ✅ R5 (default `worker` profile) |
+| `osiris-pipeline` | Python | Cleaning, NER, classification, embedding, storage | ✅ Fallback worker (`worker-python` profile) |
 | `osiris-query` | Python | Full-text + semantic search | ✅ Working |
 | `osiris-graph` | Python | Entity relationship graph (persistent) | ✅ Working |
 | `osiris-alert` | Python | Alerts + anomaly detection | ✅ Working |
