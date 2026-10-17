@@ -42,6 +42,87 @@ fn extract_entities<'py>(py: Python<'py>, text: String) -> PyResult<Bound<'py, P
     Ok(out)
 }
 
+// ------------------------------------------------ HTML ağacı (eşdeğerlik testleri, R5)
+
+fn kind_name(k: &osiris_hash::html::Kind) -> &'static str {
+    use osiris_hash::html::Kind;
+    match k {
+        Kind::Text => "NavigableString",
+        Kind::Contained(c) => match c.as_str() {
+            "script" => "Script",
+            "style" => "Stylesheet",
+            "template" => "TemplateString",
+            "rt" => "RubyTextString",
+            "rp" => "RubyParenthesisString",
+            _ => "NavigableString",
+        },
+        Kind::Comment => "Comment",
+        Kind::CData => "CData",
+        Kind::Doctype => "Doctype",
+        Kind::Declaration => "Declaration",
+        Kind::Pi => "ProcessingInstruction",
+    }
+}
+
+fn tree_node<'py>(
+    py: Python<'py>,
+    doc: &osiris_hash::html::Document,
+    id: usize,
+) -> PyResult<Bound<'py, PyAny>> {
+    use osiris_hash::html::Node;
+    Ok(match &doc.nodes[id] {
+        Node::Element { name, attrs, children, .. } => {
+            let kids = PyList::empty(py);
+            for &c in children {
+                kids.append(tree_node(py, doc, c)?)?;
+            }
+            let a: Vec<(String, String)> = attrs.clone();
+            (name.clone(), a, kids).into_pyobject(py)?.into_any()
+        }
+        Node::Text { kind, text, .. } => {
+            ("#text", kind_name(kind), text.clone()).into_pyobject(py)?.into_any()
+        }
+    })
+}
+
+/// bs4 ağacı: `(ad, [(anahtar, değer)], [çocuklar])` / `("#text", sınıf, metin)`.
+#[pyfunction]
+fn html_tree<'py>(py: Python<'py>, markup: String) -> PyResult<Bound<'py, PyAny>> {
+    let doc = osiris_hash::html::parse(&markup).map_err(value_err)?;
+    tree_node(py, &doc, osiris_hash::html::ROOT)
+}
+
+/// `soup.select(sel)` → `[(ad, get_text(" ", strip=True))]`; desteklenmeyen seçici
+/// `NotImplementedError`, geçersiz seçici `ValueError`.
+#[pyfunction]
+fn html_select(markup: String, selector: String) -> PyResult<Vec<(String, String)>> {
+    use osiris_hash::html::select::SelectError;
+    let doc = osiris_hash::html::parse(&markup).map_err(value_err)?;
+    let ids = doc.select(&selector).map_err(|e| match e {
+        SelectError::Invalid(m) => PyValueError::new_err(m),
+        SelectError::Unsupported(m) => pyo3::exceptions::PyNotImplementedError::new_err(m),
+    })?;
+    Ok(ids.into_iter().map(|i| (doc.name(i).unwrap_or("").to_owned(), doc.text(i))).collect())
+}
+
+/// `security.safe_title(BeautifulSoup(markup, "html.parser"))`
+#[pyfunction]
+fn html_title(markup: String) -> PyResult<Option<String>> {
+    Ok(osiris_hash::html::parse(&markup).map_err(value_err)?.safe_title())
+}
+
+/// Python `html.unescape`
+#[pyfunction]
+fn html_unescape(s: String) -> PyResult<String> {
+    osiris_hash::html::py_unescape(&s).map_err(value_err)
+}
+
+/// CPython `urllib.parse.urljoin`
+#[pyfunction]
+fn urljoin(base: String, url: String) -> PyResult<String> {
+    osiris_security::urlsplit::urljoin(&base, &url).map_err(value_err)
+}
+
 // -------------------------------------------------------------------------------- audit
 
 fn to_json(obj: &Bound<'_, PyAny>, depth: usize) -> PyResult<Json> {
@@ -264,6 +345,11 @@ fn osiris_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(clean_text, m)?)?;
     m.add_function(wrap_pyfunction!(content_hash, m)?)?;
     m.add_function(wrap_pyfunction!(extract_entities, m)?)?;
+    m.add_function(wrap_pyfunction!(html_tree, m)?)?;
+    m.add_function(wrap_pyfunction!(html_select, m)?)?;
+    m.add_function(wrap_pyfunction!(html_title, m)?)?;
+    m.add_function(wrap_pyfunction!(html_unescape, m)?)?;
+    m.add_function(wrap_pyfunction!(urljoin, m)?)?;
     m.add_function(wrap_pyfunction!(record_json, m)?)?;
     m.add_function(wrap_pyfunction!(record_json_from_text, m)?)?;
     m.add_function(wrap_pyfunction!(audit_canonical_payload, m)?)?;

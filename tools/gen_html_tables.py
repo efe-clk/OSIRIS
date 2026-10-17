@@ -10,7 +10,9 @@ yeniden eşlemesi, boş öğeler, dize kapları) bs4'ün kendisinden okunur; ell
 
 from __future__ import annotations
 
+import html as _html
 import sys
+from html.entities import html5 as _HTML5
 from pathlib import Path
 
 import bs4
@@ -58,6 +60,21 @@ def render() -> str:
         "/// `HTMLTreeBuilder.DEFAULT_EMPTY_ELEMENT_TAGS` (boş öğeler hemen kapanır).",
         "pub static EMPTY_ELEMENT_TAGS: &[&str] = &[",
         *[f"    {_lit(t)}," for t in sorted(builder.empty_element_tags)],
+        "];",
+        "",
+        "/// Python `html.entities.html5` (`;` dahil adlar; ikili arama) — `html.unescape` için.",
+        "pub static HTML5: &[(&str, &str)] = &[",
+        *[f"    ({_lit(k)}, {_lit(v)})," for k, v in sorted(_HTML5.items())],
+        "];",
+        "",
+        "/// Python `html._invalid_charrefs`.",
+        "pub static INVALID_CHARREFS: &[(u32, &str)] = &[",
+        *[f"    (0x{k:x}, {_lit(v)})," for k, v in sorted(_html._invalid_charrefs.items())],
+        "];",
+        "",
+        "/// Python `html._invalid_codepoints`.",
+        "pub static INVALID_CODEPOINTS: &[u32] = &[",
+        *[f"    0x{c:x}," for c in sorted(_html._invalid_codepoints)],
         "];",
         "",
         "/// `HTMLTreeBuilder.DEFAULT_STRING_CONTAINERS` anahtarları — içlerindeki metin",

@@ -16,6 +16,7 @@
 //!
 //! Konumlar Python gibi Unicode kod noktası dizinidir (`Vec<char>`).
 
+pub mod select;
 #[rustfmt::skip]
 mod tables; // @generated — tools/gen_html_tables.py
 
@@ -64,6 +65,11 @@ pub fn py_strip(s: &str) -> &str {
 
 /// Metin düğümlerini sırayla, kırpılmış ve boş olmayanları `" "` ile birleştirerek döndürür.
 pub fn get_text(markup: &str) -> Result<String, HtmlError> {
+    Ok(parse(markup)?.text(ROOT))
+}
+
+/// `BeautifulSoup(markup, "html.parser")` ağacı.
+pub fn parse(markup: &str) -> Result<Document, HtmlError> {
     let mut parser = Parser::new(markup.chars().collect());
     // HTMLParser.feed(markup): eşik 1 olduğundan boş olmayan girdi hemen goahead(0) görür
     if !parser.raw.is_empty() {
@@ -73,26 +79,134 @@ pub fn get_text(markup: &str) -> Result<String, HtmlError> {
     parser.goahead(true)?;
     // BeautifulSoup._feed: son endData + tüm etiketleri kapat (metin üretmez)
     parser.soup.end_data(Kind::Text);
-    let mut out = String::new();
-    for s in &parser.soup.strings {
-        let stripped = py_strip(s);
-        if stripped.is_empty() {
-            continue;
+    Ok(Document { nodes: parser.soup.nodes })
+}
+
+/// Kök düğüm (`[document]`).
+pub const ROOT: usize = 0;
+
+/// Ağaç düğümü.
+#[derive(Debug, Clone)]
+pub enum Node {
+    Element {
+        name: String,
+        attrs: Vec<(String, String)>,
+        children: Vec<usize>,
+        parent: Option<usize>,
+    },
+    Text {
+        kind: Kind,
+        text: String,
+        parent: usize,
+    },
+}
+
+/// bs4 ağacı (yalnızca okuma).
+#[derive(Debug, Clone)]
+pub struct Document {
+    pub nodes: Vec<Node>,
+}
+
+impl Document {
+    /// Öğe adı (metin düğümünde None).
+    pub fn name(&self, id: usize) -> Option<&str> {
+        match &self.nodes[id] {
+            Node::Element { name, .. } => Some(name),
+            Node::Text { .. } => None,
         }
-        if !out.is_empty() {
-            out.push(' ');
-        }
-        out.push_str(stripped);
     }
-    Ok(out)
+
+    pub fn attr(&self, id: usize, key: &str) -> Option<&str> {
+        match &self.nodes[id] {
+            Node::Element { attrs, .. } => {
+                attrs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+            }
+            Node::Text { .. } => None,
+        }
+    }
+
+    pub fn children(&self, id: usize) -> &[usize] {
+        match &self.nodes[id] {
+            Node::Element { children, .. } => children,
+            Node::Text { .. } => &[],
+        }
+    }
+
+    pub fn parent(&self, id: usize) -> Option<usize> {
+        match &self.nodes[id] {
+            Node::Element { parent, .. } => *parent,
+            Node::Text { parent, .. } => Some(*parent),
+        }
+    }
+
+    /// Belge sırasıyla alt öğeler (kendisi hariç).
+    pub fn descendants(&self, id: usize) -> Vec<usize> {
+        let mut out = Vec::new();
+        let mut stack: Vec<usize> = self.children(id).iter().rev().copied().collect();
+        while let Some(n) = stack.pop() {
+            out.push(n);
+            stack.extend(self.children(n).iter().rev());
+        }
+        out
+    }
+
+    /// `tag.get_text(" ", strip=True)`: `interesting_string_types` kuralı — dize kabı
+    /// adındaki öğe (script, style, template, rt, rp) yalnızca kendi türündeki dizeleri,
+    /// diğerleri düz metin + CData'yı verir.
+    pub fn text(&self, id: usize) -> String {
+        let container =
+            self.name(id).filter(|n| tables::STRING_CONTAINERS.contains(n)).map(str::to_owned);
+        let mut out = String::new();
+        for n in self.descendants(id) {
+            let Node::Text { kind, text, .. } = &self.nodes[n] else { continue };
+            let wanted = match (&container, kind) {
+                (Some(c), Kind::Contained(k)) => k == c,
+                (Some(_), _) => false,
+                (None, Kind::Text | Kind::CData) => true,
+                (None, _) => false,
+            };
+            if !wanted {
+                continue;
+            }
+            let stripped = py_strip(text);
+            if stripped.is_empty() {
+                continue;
+            }
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(stripped);
+        }
+        out
+    }
+
+    /// `soup.find(name)` — belge sırasıyla ilk öğe.
+    pub fn find(&self, name: &str) -> Option<usize> {
+        self.descendants(ROOT).into_iter().find(|&n| self.name(n) == Some(name))
+    }
+
+    /// `security.safe_title(soup)`: `<title>` metni (ilk 500 kod noktası) ya da None.
+    pub fn safe_title(&self) -> Option<String> {
+        let t = self.find("title")?;
+        let text = self.text(t);
+        if text.is_empty() { None } else { Some(text.chars().take(500).collect()) }
+    }
+
+    /// Öğe mi?
+    pub fn is_element(&self, id: usize) -> bool {
+        matches!(self.nodes[id], Node::Element { .. })
+    }
 }
 
 // ----------------------------------------------------------------------------- bs4 ağacı
 
 /// `endData(containerClass)` ile oluşan dize sınıfı.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Kind {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Kind {
+    /// NavigableString (dize kabı dışında)
     Text,
+    /// Kap içindeki düz metin: Script/Stylesheet/TemplateString/RubyText… (kap adı)
+    Contained(String),
     Comment,
     CData,
     Doctype,
@@ -100,21 +214,50 @@ enum Kind {
     Pi,
 }
 
-#[derive(Default)]
 struct Soup {
     current: Vec<String>,
-    /// Açık etiketler (kök `[document]` hariç).
-    stack: Vec<String>,
+    nodes: Vec<Node>,
+    /// Açık öğelerin düğüm dizinleri (kök dahil).
+    stack: Vec<usize>,
     open_count: HashMap<String, usize>,
-    /// `string_container_stack`: dize kabı etiketlerinin `stack` içindeki dizinleri.
+    /// `string_container_stack` (düğüm dizinleri).
     containers: Vec<usize>,
-    /// `get_text()` çıktısına giren dizeler (kırpılmamış), belge sırasıyla.
-    strings: Vec<String>,
+}
+
+impl Default for Soup {
+    fn default() -> Self {
+        Self {
+            current: Vec::new(),
+            nodes: vec![Node::Element {
+                name: "[document]".into(),
+                attrs: Vec::new(),
+                children: Vec::new(),
+                parent: None,
+            }],
+            stack: vec![ROOT],
+            open_count: HashMap::new(),
+            containers: Vec::new(),
+        }
+    }
 }
 
 impl Soup {
     fn handle_data(&mut self, data: String) {
         self.current.push(data);
+    }
+
+    fn top(&self) -> usize {
+        *self.stack.last().unwrap_or(&ROOT)
+    }
+
+    fn append(&mut self, node: Node) -> usize {
+        let id = self.nodes.len();
+        let parent = self.top();
+        self.nodes.push(node);
+        if let Node::Element { children, .. } = &mut self.nodes[parent] {
+            children.push(id);
+        }
+        id
     }
 
     fn end_data(&mut self, kind: Kind) {
@@ -124,33 +267,50 @@ impl Soup {
         let data: String = self.current.concat();
         self.current.clear();
         // Yalnızca ASCII boşluktan oluşan dize " " / "\n" olur — kırpınca zaten boşalır.
-        // MAIN_CONTENT_STRING_TYPES = {NavigableString, CData}; kap içindeki düz metin
-        // Script/Stylesheet/TemplateString/RubyText… olur ve atlanır. CData sınıfı açıkça
-        // verildiği için kap içinde de CData kalır.
-        let included = match kind {
-            Kind::Text => self.containers.is_empty(),
-            Kind::CData => true,
-            Kind::Comment | Kind::Doctype | Kind::Declaration | Kind::Pi => false,
+        // string_container(): sınıf açıkça verilmediyse (NavigableString) en üstteki kap belirler.
+        let kind = match kind {
+            Kind::Text => match self.containers.last().and_then(|&c| self.name_of(c)) {
+                Some(c) => Kind::Contained(c),
+                None => Kind::Text,
+            },
+            other => other,
         };
-        if included {
-            self.strings.push(data);
+        let parent = self.top();
+        self.append(Node::Text { kind, text: data, parent });
+    }
+
+    fn name_of(&self, id: usize) -> Option<String> {
+        match &self.nodes[id] {
+            Node::Element { name, .. } => Some(name.clone()),
+            Node::Text { .. } => None,
         }
     }
 
-    fn push_tag(&mut self, name: &str) {
-        self.stack.push(name.to_owned());
+    fn push_tag(&mut self, name: &str, attrs: Vec<(String, String)>) {
+        let parent = Some(self.top());
+        let id = self.append(Node::Element {
+            name: name.to_owned(),
+            attrs,
+            children: Vec::new(),
+            parent,
+        });
+        self.stack.push(id);
         *self.open_count.entry(name.to_owned()).or_insert(0) += 1;
         if tables::STRING_CONTAINERS.contains(&name) {
-            self.containers.push(self.stack.len() - 1);
+            self.containers.push(id);
         }
     }
 
     fn pop_tag(&mut self) -> Option<String> {
-        let name = self.stack.pop()?;
+        if self.stack.len() <= 1 {
+            return None;
+        }
+        let id = self.stack.pop()?;
+        let name = self.name_of(id)?;
         if let Some(c) = self.open_count.get_mut(&name) {
             *c -= 1;
         }
-        if self.containers.last() == Some(&self.stack.len()) {
+        if self.containers.last() == Some(&id) {
             self.containers.pop();
         }
         Some(name)
@@ -168,9 +328,9 @@ impl Soup {
         }
     }
 
-    fn handle_starttag(&mut self, name: &str) {
+    fn handle_starttag(&mut self, name: &str, attrs: Vec<(String, String)>) {
         self.end_data(Kind::Text);
-        self.push_tag(name);
+        self.push_tag(name, attrs);
     }
 
     fn handle_endtag(&mut self, name: &str) {
@@ -285,7 +445,8 @@ fn scan_attr_name(c: &[char], k: usize) -> Option<usize> {
 
 /// İsteğe bağlı değer grubu:
 /// `[\t\n\r\f ]*=[\t\n\r\f ]*('[^']*'|"[^"]*"|(?!['"])[^>\t\n\r\f ]*)` — geri izleme dahil.
-fn scan_attr_value(c: &[char], m: usize) -> Option<usize> {
+/// (grup sonu, değer aralığı) döner.
+fn scan_attr_value(c: &[char], m: usize) -> Option<(usize, (usize, usize))> {
     let n = c.len();
     let mut q = m;
     while q < n && is_ws(c[q]) {
@@ -300,16 +461,16 @@ fn scan_attr_value(c: &[char], m: usize) -> Option<usize> {
     }
     if r < n && (c[r] == '\'' || c[r] == '"') {
         if let Some(close) = find(c, c[r], r + 1) {
-            return Some(close + 1);
+            return Some((close + 1, (r, close + 1)));
         }
         // Kapanmayan tırnak: '=' sonrası boşluk bir geri alınır, çıplak değer boş eşleşir
-        return if r > q + 1 { Some(r - 1) } else { None };
+        return if r > q + 1 { Some((r - 1, (r - 1, r - 1))) } else { None };
     }
     let mut e = r;
     while e < n && c[e] != '>' && !is_ws(c[e]) {
         e += 1;
     }
-    Some(e)
+    Some((e, (r, e)))
 }
 
 /// `tagfind_tolerant.match(rawdata, p)` → (küçük harfli ad, bitiş).
@@ -318,18 +479,22 @@ fn scan_tagfind(c: &[char], p: usize) -> (String, usize) {
     (s(&c[p..name_end]).to_lowercase(), scan_tolerant_sep(c, name_end))
 }
 
-/// `attrfind_tolerant.match(rawdata, k).end()`
-fn scan_attrfind(c: &[char], k: usize) -> Option<usize> {
+/// `attrfind_tolerant.match(rawdata, k)` → (son, ad aralığı, değer aralığı).
+#[allow(clippy::type_complexity)]
+fn scan_attrfind(c: &[char], k: usize) -> Option<(usize, (usize, usize), Option<(usize, usize)>)> {
     let m = scan_attr_name(c, k)?;
-    let m = scan_attr_value(c, m).unwrap_or(m);
-    Some(scan_tolerant_sep(c, m))
+    let (end, value) = match scan_attr_value(c, m) {
+        Some((e, v)) => (e, Some(v)),
+        None => (m, None),
+    };
+    Some((scan_tolerant_sep(c, end), (k, m), value))
 }
 
 /// `locatetagend.match(rawdata, p).end()`; `p` bir harfi gösterir.
 fn scan_locatetagend(c: &[char], p: usize) -> usize {
     let mut k = scan_sep(c, scan_tag_name(c, p));
     while let Some(m) = scan_attr_name(c, k) {
-        let m = scan_attr_value(c, m).unwrap_or(m);
+        let m = scan_attr_value(c, m).map_or(m, |(e, _)| e);
         k = scan_sep(c, m);
     }
     if c.get(k) == Some(&'>') {
@@ -392,16 +557,21 @@ impl Parser {
 
     // ---- BeautifulSoupHTMLParser olay işleyicileri
 
-    fn handle_starttag(&mut self, tag: &str, handle_empty_element: bool) {
-        self.soup.handle_starttag(tag);
+    fn handle_starttag(
+        &mut self,
+        tag: &str,
+        attrs: Vec<(String, String)>,
+        handle_empty_element: bool,
+    ) {
+        self.soup.handle_starttag(tag, attrs);
         if handle_empty_element && tables::EMPTY_ELEMENT_TAGS.contains(&tag) {
             self.handle_endtag(tag, false);
             self.already_closed_empty_element.push(tag.to_owned());
         }
     }
 
-    fn handle_startendtag(&mut self, tag: &str) {
-        self.handle_starttag(tag, false);
+    fn handle_startendtag(&mut self, tag: &str, attrs: Vec<(String, String)>) {
+        self.handle_starttag(tag, attrs, false);
         self.handle_endtag(tag, false);
     }
 
@@ -550,7 +720,7 @@ impl Parser {
             let c = &self.raw;
             if c[i] == '<' {
                 let mut k: isize = if starttagopen(c, i) {
-                    self.parse_starttag(i)
+                    self.parse_starttag(i)?
                 } else if starts_with(c, i, "</") {
                     self.parse_endtag(i)
                 } else if starts_with(c, i, "<!--") {
@@ -733,37 +903,59 @@ impl Parser {
         (j + 1) as isize
     }
 
-    fn parse_starttag(&mut self, i: usize) -> isize {
+    fn parse_starttag(&mut self, i: usize) -> Result<isize, HtmlError> {
         let c = &self.raw;
         let endpos = scan_locatetagend(c, i + 1);
         if c[endpos - 1] != '>' {
-            return -1;
+            return Ok(-1);
         }
         let (tag, mut k) = scan_tagfind(c, i + 1);
+        let mut attrs: Vec<(String, Option<String>)> = Vec::new();
         while k < endpos {
-            match scan_attrfind(c, k) {
-                Some(m) => k = m,
-                None => break,
-            }
+            let Some((m, (ns, ne), value)) = scan_attrfind(c, k) else { break };
+            let value = match value {
+                None => None,
+                Some((vs, ve)) => {
+                    let mut v: Vec<char> = c[vs..ve].to_vec();
+                    if v.len() >= 2 && (v[0] == '\'' || v[0] == '"') && v[v.len() - 1] == v[0] {
+                        v = v[1..v.len() - 1].to_vec();
+                    } else if v.len() == 1 && (v[0] == '\'' || v[0] == '"') {
+                        v.clear();
+                    }
+                    let raw: String = v.iter().collect();
+                    Some(if raw.is_empty() { raw } else { py_unescape(&raw)? })
+                }
+            };
+            attrs.push((s(&c[ns..ne]).to_lowercase(), value));
+            k = m;
         }
         let rest = slice(c, k, endpos);
         let end = py_strip(&rest);
         if end != ">" && end != "/>" {
             let data = slice(c, i, endpos);
             self.handle_data(data);
-            return endpos as isize;
+            return Ok(endpos as isize);
+        }
+        // bs4: None → "", tekrarlanan anahtar REPLACE (ilk konum, son değer)
+        let mut dict: Vec<(String, String)> = Vec::new();
+        for (key, value) in attrs {
+            let value = value.unwrap_or_default();
+            match dict.iter_mut().find(|(k2, _)| *k2 == key) {
+                Some(slot) => slot.1 = value,
+                None => dict.push((key, value)),
+            }
         }
         if end.ends_with("/>") {
-            self.handle_startendtag(&tag);
+            self.handle_startendtag(&tag, dict);
         } else {
-            self.handle_starttag(&tag, true);
+            self.handle_starttag(&tag, dict, true);
             if CDATA_CONTENT_ELEMENTS.contains(&tag.as_str()) || tag == "plaintext" {
                 self.set_cdata_mode(&tag, false);
             } else if RCDATA_CONTENT_ELEMENTS.contains(&tag.as_str()) {
                 self.set_cdata_mode(&tag, true);
             }
         }
-        endpos as isize
+        Ok(endpos as isize)
     }
 
     fn parse_endtag(&mut self, i: usize) -> isize {
@@ -786,6 +978,107 @@ impl Parser {
         self.clear_cdata_mode();
         j as isize
     }
+}
+
+/// Python `html.unescape` (öznitelik değerleri; HTML5 adlandırılmış referans kuralları).
+/// `_charref = &(#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[^\t\n\f <&#;]{1,32};?)`
+pub fn py_unescape(s: &str) -> Result<String, HtmlError> {
+    if !s.contains('&') {
+        return Ok(s.to_owned());
+    }
+    let c: Vec<char> = s.chars().collect();
+    let n = c.len();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < n {
+        if c[i] != '&' {
+            out.push(c[i]);
+            i += 1;
+            continue;
+        }
+        let p = i + 1;
+        // sayısal
+        if p < n && c[p] == '#' {
+            let (hex, start) = if p + 1 < n && (c[p + 1] == 'x' || c[p + 1] == 'X') {
+                (true, p + 2)
+            } else {
+                (false, p + 1)
+            };
+            let mut q = start;
+            while q < n && (if hex { c[q].is_ascii_hexdigit() } else { c[q].is_ascii_digit() }) {
+                q += 1;
+            }
+            if q > start {
+                let digits: String = c[start..q].iter().collect();
+                if !hex && digits.len() > PY_INT_MAX_STR_DIGITS {
+                    return Err(HtmlError("sayısal karakter referansı çok uzun"));
+                }
+                let trimmed = digits.trim_start_matches('0');
+                let num = if trimmed.len() > 8 {
+                    u32::MAX
+                } else {
+                    u32::from_str_radix(
+                        if trimmed.is_empty() { "0" } else { trimmed },
+                        if hex { 16 } else { 10 },
+                    )
+                    .unwrap_or(u32::MAX)
+                };
+                let end = if q < n && c[q] == ';' { q + 1 } else { q };
+                if let Some((_, v)) = tables::INVALID_CHARREFS.iter().find(|(k, _)| *k == num) {
+                    out.push_str(v);
+                } else if (0xd800..=0xdfff).contains(&num) || num > 0x10ffff {
+                    out.push('\u{fffd}');
+                } else if tables::INVALID_CODEPOINTS.contains(&num) {
+                } else if let Some(ch) = char::from_u32(num) {
+                    out.push(ch);
+                }
+                i = end;
+                continue;
+            }
+            out.push('&');
+            i += 1;
+            continue;
+        }
+        // adlandırılmış: [^\t\n\f <&#;]{1,32};?
+        let mut q = p;
+        while q < n
+            && q - p < 32
+            && !matches!(c[q], '\t' | '\n' | '\u{c}' | ' ' | '<' | '&' | '#' | ';')
+        {
+            q += 1;
+        }
+        if q == p {
+            out.push('&');
+            i += 1;
+            continue;
+        }
+        let end = if q < n && c[q] == ';' { q + 1 } else { q };
+        let name: String = c[p..end].iter().collect();
+        let lookup = |k: &str| {
+            tables::HTML5.binary_search_by(|(e, _)| (*e).cmp(k)).ok().map(|i| tables::HTML5[i].1)
+        };
+        if let Some(v) = lookup(&name) {
+            out.push_str(v);
+        } else {
+            let chars: Vec<char> = name.chars().collect();
+            let mut done = false;
+            for x in (2..chars.len()).rev() {
+                let pre: String = chars[..x].iter().collect();
+                if let Some(v) = lookup(&pre) {
+                    out.push_str(v);
+                    out.extend(&chars[x..]);
+                    done = true;
+                    break;
+                }
+            }
+            if !done {
+                out.push('&');
+                out.push_str(&name);
+            }
+        }
+        i = end;
+    }
+    Ok(out)
 }
 
 /// bs4 `UnicodeDammit.numeric_character_reference` (HTML "numeric character reference end state").

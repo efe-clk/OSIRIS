@@ -246,3 +246,124 @@ def _utf8_ok(s: str) -> bool:
     except UnicodeEncodeError:
         return False
     return True
+
+
+# ------------------------------------------------------------------ R5: bs4 ağacı ve seçiciler
+_ASCII_SPACES = "\x20\x0a\x09\x0c\x0d"
+_LIST_ATTRS_ALL = {"class", "accesskey", "dropzone"}
+
+
+def _bs4_tree(node):
+    from bs4 import NavigableString
+
+    if isinstance(node, NavigableString):
+        return ("#text", type(node).__name__, str(node))
+    attrs = [(k, " ".join(v) if isinstance(v, list) else v) for k, v in node.attrs.items()]
+    return (node.name, attrs, [_bs4_tree(c) for c in node.contents])
+
+
+def _norm(tree, *, rust: bool):
+    """Yalnız-boşluk dizeleri at (bs4 bunları " "/"\\n" yapar); çok değerli öznitelikleri birleştir."""
+    if tree[0] == "#text":
+        return None if not tree[2].strip(_ASCII_SPACES) else tree
+    name, attrs, kids = tree
+    if rust:
+        attrs = [(k, " ".join(v.split()) if k in _LIST_ATTRS_ALL or (name, k) in {
+            ("a", "rel"), ("a", "rev"), ("link", "rel"), ("link", "rev"), ("td", "headers"),
+            ("th", "headers"), ("form", "accept-charset"), ("object", "archive"), ("area", "rel"),
+            ("icon", "sizes"), ("iframe", "sandbox"), ("output", "for")} else v) for k, v in attrs]
+    out_kids = []
+    for k in kids:
+        n = _norm(k, rust=rust)
+        if n is None:
+            continue
+        # bitişik metinler bs4'te zaten tek dizedir
+        out_kids.append(n)
+    return (name, sorted(attrs), out_kids)
+
+
+ATTR_TOKENS = [" a", " a=b", " a='b c'", ' a="b>c"', " a=", " /", "/", " a='x", "\t", "=x",
+               " class='x  y'", " class=x", " id=i1", " id='i&amp;2'", " href='/p?a=1&b=2'",
+               " title=&lt;t&gt;", " data-x=&notit;", " A=B", " a=1 a=2", " v=&#x41;&#65", " w=&ampx"]
+
+
+def _structured_html(rng: random.Random) -> str:
+    parts = []
+    for _ in range(rng.randint(1, 8)):
+        tag = rng.choice(["p", "b", "div", "span", "script", "style", "title", "a", "br", "rt",
+                          "template", "ul", "li", "x-y", "img", "textarea", "pre"])
+        attrs = "".join(rng.choice(ATTR_TOKENS) for _ in range(rng.randint(0, 3)))
+        close = rng.choice([">", "/>", " >", ">", ">"])
+        body = _join(rng, TEXT_TOKENS[:20] + HTML_TOKENS[:30], 0, 4)
+        end = rng.choice([f"</{tag}>", "", f"</{tag.upper()}>", "</div>", f"</{tag} x>"])
+        parts.append(f"<{tag}{attrs}{close}{body}{end}")
+    return "".join(parts)
+
+
+def test_html_tree_parity() -> None:
+    from bs4 import BeautifulSoup
+
+    rng = random.Random(9)
+    for i in range(N):
+        markup = _structured_html(rng) if rng.random() < 0.7 else _join(rng, HTML_TOKENS, 1, 30)
+        try:
+            soup = BeautifulSoup(markup, "html.parser")
+        except Exception:  # noqa: BLE001 — ParserRejectedMarkup / int sınırı
+            with pytest.raises(ValueError):
+                native.html_tree(markup)
+            continue
+        want = _norm(_bs4_tree(soup), rust=False)
+        got = _norm(native.html_tree(markup), rust=True)
+        assert got[2] == want[2], f"#{i} {markup!r}"
+
+
+SELECTORS = ["p", "div.post", ".x", "#i1", "a[href]", "[a=b]", "[class~=y]", "div > p", "div p",
+             "p + span", "p ~ span", "li:first-child", "li:last-child", "li:nth-child(2n+1)",
+             "li:nth-of-type(2)", "p:not(.x)", ":is(b, span)", "*", "div, span", "[id^=i]",
+             "[href*='a=1']", "[title$='t>']", "ul li", "span:empty", "b:only-child", "[A=B]",
+             "DIV", "p:nth-last-child(1)", "[class='x y']", "[a|=b]", "x-y"]
+BAD_SELECTORS = ["p[", "[title$=t>]", "..x", "p >", ":nth-child(x)", "[a=]", ""]
+
+
+def test_select_parity() -> None:
+    from bs4 import BeautifulSoup
+
+    rng = random.Random(10)
+    for i in range(N // 3):
+        markup = _structured_html(rng)
+        soup = BeautifulSoup(markup, "html.parser")
+        for sel in SELECTORS:
+            want = [(n.name, n.get_text(" ", strip=True)) for n in soup.select(sel)]
+            got = [tuple(x) for x in native.html_select(markup, sel)]
+            assert got == want, f"#{i} {sel!r} {markup!r}"
+        assert native.html_title(markup) == _py_title(soup), f"#{i} {markup!r}"
+    for sel in BAD_SELECTORS:
+        with pytest.raises(Exception):  # noqa: B017 — soupsieve: SelectorSyntaxError
+            BeautifulSoup("<p>x</p>", "html.parser").select(sel)
+        with pytest.raises(ValueError):
+            native.html_select("<p>x</p>", sel)
+
+
+def _py_title(soup):
+    from osiris.security import safe_title
+
+    return safe_title(soup)
+
+
+def test_unescape_and_urljoin_parity() -> None:
+    import html
+    from urllib.parse import urljoin
+
+    rng = random.Random(11)
+    ent = ["&", "&amp", "&amp;", "&notit;", "&not", "&#", "&#x", "&#65", "&#x41;", "&#0;", "&#128;",
+           "&#xD800;", "&#1114112;", "&lt", "&ltx", "&#65x", "a", ";", "ş", " ", "&nbsp", "&quot;"]
+    for i in range(N):
+        s = _join(rng, ent, 0, 8)
+        assert native.html_unescape(s) == html.unescape(s), f"#{i} {s!r}"
+    bases = ["https://h.example/a/b/c?q=1#f", "http://h/", "https://h", "https://h/a;p/b"]
+    rels = ["/x", "x", "../x", "./x", "?y", "#z", "//o/x", "https://o", "", ".", "..", "a/../../b",
+            "x;p", "http:x", "https:/x", "%2e%2e/x", "x?y#z"]
+    for i in range(N // 3):
+        b = rng.choice(bases)
+        r = "".join(rng.choice(rels) for _ in range(rng.randint(1, 2)))
+        assert native.urljoin(b, r) == urljoin(b, r), f"#{i} {b!r} {r!r}"
