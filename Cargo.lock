@@ -2454,6 +2454,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "osiris-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "osiris-collector",
+ "osiris-db",
+ "osiris-plugin",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "osiris-collector"
 version = "0.1.0"
 dependencies = [

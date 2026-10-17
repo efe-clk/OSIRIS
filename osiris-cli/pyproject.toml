@@ -14,7 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-osiris = "osiris_cli.cli:main"
+# R6: `osiris` adı Rust CLI'nindir (crates/osiris-cli); Python sürümü R7'de silinir
+osiris-py = "osiris_cli.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["osiris_cli*"]
