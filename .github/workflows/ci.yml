@@ -26,16 +26,26 @@ jobs:
           pip install -e ./osiris-api
           pip install -e ./osiris-cli
           pip install pytest pytest-cov httpx jsonschema
+      - name: Rust çekirdeği (osiris_native, PyO3) — rust-toolchain.toml sürümüyle derlenir
+        run: |
+          rustup toolchain install
+          pip install ./crates/osiris-py
       - name: Plugin bağımlılıkları
         run: |
           for req in plugins/*/requirements.txt; do pip install -r "$req"; done
-      - name: Testleri çalıştır (%80 kapsam eşiği)
+      - name: HTML tabloları bs4 ile güncel mi (content_hash sözleşmesi)
+        run: python tools/gen_html_tables.py --check
+      - name: Testleri çalıştır — Rust yolu (varsayılan, %80 kapsam eşiği)
         run: |
           pytest -q \
             --cov=osiris --cov=osiris_collector --cov=osiris_pipeline \
             --cov=osiris_graph --cov=osiris_alert --cov=osiris_report \
             --cov=osiris_query --cov=osiris_api --cov=osiris_cli \
             --cov-report=term-missing --cov-fail-under=80
+      - name: Testleri çalıştır — Python referans yolu (OSIRIS_NATIVE=python)
+        env:
+          OSIRIS_NATIVE: python
+        run: pytest -q
 
   integration:
     name: Entegrasyon (PostgreSQL)
@@ -82,6 +92,8 @@ jobs:
           pip install -e ./osiris-sdk -e ./osiris-collector -e "./osiris-pipeline[embedding,ner]" \
             -e ./osiris-graph -e ./osiris-query -e ./osiris-alert -e ./osiris-report \
             -e ./osiris-api uvicorn jsonschema -r tests/contract/requirements.txt
+          rustup toolchain install
+          pip install ./crates/osiris-py
           for req in plugins/*/requirements.txt; do pip install -r "$req"; done
       - name: Entegrasyon + model golden testleri (NER, embedding)
         env:
@@ -116,7 +128,7 @@ jobs:
       - name: Ruff kur
         run: pip install ruff
       - name: Lint çalıştır
-        run: ruff check osiris-sdk osiris-collector osiris-pipeline osiris-graph osiris-alert osiris-report osiris-query osiris-api osiris-cli plugins tests
+        run: ruff check osiris-sdk osiris-collector osiris-pipeline osiris-graph osiris-alert osiris-report osiris-query osiris-api osiris-cli plugins tests tools
       - name: Döküman link kontrolü
         run: |
           python3 - << 'EOF'
@@ -150,6 +162,34 @@ jobs:
         run: |
           pip install pip-audit
           pip-audit --desc --local --skip-editable || true
+
+  rust:
+    name: Rust (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # pyo3-build-config (osiris-py) clippy sırasında Python ≥ 3.11 yorumlayıcısı arar
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Araç zinciri (rust-toolchain.toml)
+        run: rustup toolchain install && rustc --version
+      - uses: Swatinem/rust-cache@v2
+      - name: Biçim
+        run: cargo fmt --all --check
+      - name: Clippy (uyarı = hata)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Testler (fixtures/ altın verileri dahil)
+        run: cargo test --workspace --exclude osiris-py --locked
+
+  cargo-deny:
+    name: Rust bağımlılık denetimi (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
 
   cpp-build:
     name: C++ derleme
