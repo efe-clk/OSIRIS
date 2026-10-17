@@ -25,6 +25,7 @@ osiris-pipeline = { path = "crates/osiris-pipeline" }
 osiris-queue = { path = "crates/osiris-queue" }
 osiris-collector = { path = "crates/osiris-collector" }
 osiris-graph = { path = "crates/osiris-graph" }
+osiris-report = { path = "crates/osiris-report" }
 ammonia = "4.2.4"
 anyhow = "1.0.104"
 async-trait = "0.1.92"
@@ -46,6 +47,7 @@ quick-xml = "0.42.0"
 redis = { version = "1.7.1", default-features = false, features = ["streams", "tokio-comp", "aio", "connection-manager"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "socks", "http2", "charset", "gzip", "deflate"] }
 schemars = "1.2.3"
+tempfile = "3.27.0"
 sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "uuid", "chrono", "json"] }
 thiserror = "2.0.21"
 tokenizers = { version = "0.23.2", default-features = false, features = ["onig"] }

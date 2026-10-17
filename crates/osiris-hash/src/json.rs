@@ -66,7 +66,7 @@ impl From<serde_json::Value> for Json {
 
 /// JSON dize kaçışı — Python `json.dumps(ensure_ascii=False)` ve RFC 8785 aynıdır:
 /// `"` `\\` `\b` `\f` `\n` `\r` `\t` kısa biçim, diğer U+0000–U+001F `\u00xx` (küçük harf).
-pub(crate) fn write_str(out: &mut String, s: &str) {
+pub fn write_str(out: &mut String, s: &str) {
     out.push('"');
     for c in s.chars() {
         match c {

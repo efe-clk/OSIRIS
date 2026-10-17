@@ -1,0 +1,22 @@
+[package]
+name = "osiris-report"
+description = "OSIRIS rapor üretici: Markdown/HTML (Jinja2 autoescape eşdeğeri), JSON, CSV (formül koruması, dizin kilidi), STIX 2.1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+osiris-hash.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid = { workspace = true, features = ["v5"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
