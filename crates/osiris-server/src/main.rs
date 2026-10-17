@@ -169,12 +169,18 @@ async fn main() -> anyhow::Result<()> {
             }
             // Geçiş adımı 1 (OSIRIS_PIPELINE_SHADOW=1): kuyruğa dokunmadan, Python işçisinin
             // yazdıklarını periyodik olarak yeniden hesaplayıp karşılaştır.
-            if matches!(std::env::var("OSIRIS_PIPELINE_SHADOW").unwrap_or_default().to_lowercase().as_str(), "1" | "on" | "true") {
+            if matches!(
+                std::env::var("OSIRIS_PIPELINE_SHADOW").unwrap_or_default().to_lowercase().as_str(),
+                "1" | "on" | "true"
+            ) {
                 let pool = pool.context("gölge mod için OSIRIS_DATABASE_URL gerekli")?;
                 tracing::info!("Gölge mod: kuyruk tüketilmiyor; Python çıktısı karşılaştırılıyor");
                 loop {
-                    match osiris_pipeline::shadow::compare_recent(&pipeline, &pool, 15, 1000).await {
-                        Ok(r) if r.clean() => tracing::info!(report = %r.to_json(), "gölge: uyuşmazlık yok"),
+                    match osiris_pipeline::shadow::compare_recent(&pipeline, &pool, 15, 1000).await
+                    {
+                        Ok(r) if r.clean() => {
+                            tracing::info!(report = %r.to_json(), "gölge: uyuşmazlık yok")
+                        }
                         Ok(r) => tracing::warn!(report = %r.to_json(), "gölge: UYUŞMAZLIK"),
                         Err(e) => tracing::error!("gölge karşılaştırma başarısız: {e}"),
                     }
