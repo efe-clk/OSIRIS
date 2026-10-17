@@ -47,7 +47,7 @@ URL_TOKENS = [
     "http", "https", "HTTP", "ftp", "file", "javascript", ":", "//", "/", "?", "#", "@", ":@",
     "user", "pass", "[", "]", "::1", "::ffff:127.0.0.1", "127.0.0.1", "10.0.0.1", "93.184.216.34",
     "example.com", "EXAMPLE.COM", "localhost", "LOCALHOST.", "abc.onion", "x.ONION", "mixed.test",
-    "internal.test", "v6.test", ":80", ":0", ":99999", ":abc", ":", "%25eth0", "fe80::1",
+    "internal.test", "v6.test", "forum.i2p", "X.I2P", ":80", ":0", ":99999", ":abc", ":", "%25eth0", "fe80::1",
     "2606:2800::1", "v1.x", "\\", "\t", "\n", " ", "\x00", "\x7f", "ℂ", "℀", "ⓛ", "münchen.test",
     "0x7f.1", "2130706433", "..", ".", "a", "-", "%2e",
 ]
@@ -166,9 +166,10 @@ def test_url_parity(monkeypatch) -> None:
     for i in range(N):
         url = _join(rng, URL_TOKENS, 1, 12)
         onion = rng.random() < 0.2
-        want = _outcome(sec._py_assert_safe_url, url, allow_onion=onion)
-        got = _outcome(native.assert_safe_url, url, onion, _resolver)
-        assert got == want, f"#{i} {url!r} onion={onion}"
+        i2p = rng.random() < 0.2
+        want = _outcome(sec._py_assert_safe_url, url, allow_onion=onion, allow_i2p=i2p)
+        got = _outcome(native.assert_safe_url, url, onion, i2p, _resolver)
+        assert got == want, f"#{i} {url!r} onion={onion} i2p={i2p}"
 
 
 def test_host_parity(monkeypatch) -> None:
@@ -202,3 +203,46 @@ def test_sanitizer_parity() -> None:
         ]:
             assert _outcome(rs_fn, v, *args) == _outcome(py_fn, v, *args), f"#{i} {py_fn.__name__} {v!r}"
         assert native.mask_secret(v or None, 4) == sec._py_mask_secret(v, 4)
+
+
+def test_record_json_parity() -> None:
+    """Plugin raw_content: Python json.loads + _py_record_json ↔ Rust parse_py + record_json."""
+    from osiris.records import _py_record_json
+
+    rng = random.Random(8)
+    for i in range(N):
+        value = _rand_json(rng)
+        assert native.record_json(value) == _py_record_json(value), f"#{i} {value!r}"
+        text = json.dumps(value, ensure_ascii=rng.random() < 0.5)
+        # rastgele bozma: hata davranışı da aynı olmalı
+        if rng.random() < 0.5 and text:
+            pos = rng.randrange(len(text) + 1)
+            text = text[:pos] + rng.choice(["", ",", "]", "}", "\"", "\\", "1", " ", "\x01", "e", ".", "-", "NaN"]) + text[pos + 1:]
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = _INVALID
+        try:
+            want = ("ok", _py_record_json(parsed)) if parsed is not _INVALID else ("error",)
+        except ValueError:
+            want = ("error",)
+        if parsed is not _INVALID and not _utf8_ok(json.dumps(parsed, ensure_ascii=False)):
+            # Eşlenmemiş vekil: Python dizede taşır (kuyruğa yazarken UTF-8 hatası verir),
+            # Rust U+FFFD yazar — belgelenmiş fark (SOZLESME §4)
+            continue
+        try:
+            got = ("ok", native.record_json_from_text(text))
+        except ValueError:
+            got = ("error",)
+        assert got == want, f"#{i} {text!r}"
+
+
+_INVALID = object()
+
+
+def _utf8_ok(s: str) -> bool:
+    try:
+        s.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True

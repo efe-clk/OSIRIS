@@ -6,6 +6,7 @@ from typing import Any
 
 import requests
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
+from osiris.records import record_json
 from osiris.security import fetch_url
 
 _HEADERS = {"User-Agent": "OSIRIS-OSINT/0.1 (+self-hosted)"}
@@ -60,7 +61,7 @@ class ShodanCollector(BaseCollector):
                 CollectedItem(
                     url=f"http://{match.get('ip_str')}:{match.get('port')}"[:2048],
                     title=str(match.get("product", ""))[:500] or None,
-                    raw_content=str(match)[:50_000],
+                    raw_content=record_json(match)[:50_000],
                     metadata={"ip": match.get("ip_str"), "port": match.get("port")},
                 )
             )

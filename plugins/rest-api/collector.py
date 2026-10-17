@@ -6,6 +6,7 @@ from typing import Any
 
 import requests
 from osiris.plugin import BaseCollector, CollectedItem, CollectionResult
+from osiris.records import record_json
 from osiris.security import fetch_url
 
 _ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
@@ -76,7 +77,7 @@ class RestApiCollector(BaseCollector):
                 CollectedItem(
                     url=endpoint[:2048],
                     title=str(title)[:500] if title else None,
-                    raw_content=str(record)[:50_000],
+                    raw_content=record_json(record)[:50_000],
                     metadata={"endpoint": endpoint[:1000]},
                 )
             )

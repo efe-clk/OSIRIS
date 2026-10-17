@@ -90,6 +90,19 @@ fn value_err(e: impl std::fmt::Display) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
+/// `records.record_json` — plugin `raw_content` kanonik JSON'u (SOZLESME §4).
+#[pyfunction]
+fn record_json(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    Ok(osiris_hash::canonical::record_json(&to_json(value, 0)?))
+}
+
+/// Python `json.loads` uyumlu ayrıştırma + kanonik kayıt metni (eşdeğerlik testleri için).
+#[pyfunction]
+fn record_json_from_text(text: String) -> PyResult<String> {
+    let v = Json::parse_py(&text).map_err(value_err)?;
+    Ok(osiris_hash::canonical::record_json(&v))
+}
+
 /// `audit.canonical_payload` (v1: Python json.dumps, v2: RFC 8785).
 #[pyfunction]
 #[pyo3(signature = (user_id, action, resource, detail, chain_version))]
@@ -201,18 +214,16 @@ fn resolve_safe_ips(host: Option<String>, resolver: &Bound<'_, PyAny>) -> PyResu
 
 /// `security.assert_safe_url(url, allow_onion=...)`; geçerliyse özgün URL.
 #[pyfunction]
-#[pyo3(signature = (url, allow_onion, resolver))]
+#[pyo3(signature = (url, allow_onion, allow_i2p, resolver))]
 fn assert_safe_url(
     url: Option<String>,
     allow_onion: bool,
+    allow_i2p: bool,
     resolver: &Bound<'_, PyAny>,
 ) -> PyResult<String> {
-    osiris_security::assert_safe_url(
-        url.as_deref().unwrap_or(""),
-        allow_onion,
-        &PyResolver(resolver),
-    )
-    .map_err(check_err)
+    let policy = osiris_security::UrlPolicy { allow_onion, allow_i2p };
+    osiris_security::assert_safe_url(url.as_deref().unwrap_or(""), policy, &PyResolver(resolver))
+        .map_err(check_err)
 }
 
 #[pyfunction]
@@ -253,6 +264,8 @@ fn osiris_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(clean_text, m)?)?;
     m.add_function(wrap_pyfunction!(content_hash, m)?)?;
     m.add_function(wrap_pyfunction!(extract_entities, m)?)?;
+    m.add_function(wrap_pyfunction!(record_json, m)?)?;
+    m.add_function(wrap_pyfunction!(record_json_from_text, m)?)?;
     m.add_function(wrap_pyfunction!(audit_canonical_payload, m)?)?;
     m.add_function(wrap_pyfunction!(audit_chain_hash, m)?)?;
     m.add_function(wrap_pyfunction!(audit_verify_records, m)?)?;

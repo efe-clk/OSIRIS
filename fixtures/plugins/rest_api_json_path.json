@@ -32,7 +32,7 @@
       {
         "url": "https://api.example.com/v1/olaylar",
         "title": "kayıt 1",
-        "raw_content": "{'title': 'kayıt 1', 'id': 1, 'tags': ['a'], 'ok': True, 'none': None}",
+        "raw_content": "{\"id\":1,\"none\":null,\"ok\":true,\"tags\":[\"a\"],\"title\":\"kayıt 1\"}",
         "published_at": null,
         "metadata": {
           "endpoint": "https://api.example.com/v1/olaylar"
@@ -42,7 +42,7 @@
       {
         "url": "https://api.example.com/v1/olaylar",
         "title": null,
-        "raw_content": "{'id': 2, 'v': 1.5}",
+        "raw_content": "{\"id\":2,\"v\":1.5}",
         "published_at": null,
         "metadata": {
           "endpoint": "https://api.example.com/v1/olaylar"

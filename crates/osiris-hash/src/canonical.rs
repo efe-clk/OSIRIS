@@ -125,6 +125,58 @@ pub fn jcs_safe(value: &Json) -> Json {
     }
 }
 
+// --------------------------------------------------------------------- kayıt JSON'u (R5)
+
+/// Plugin `raw_content` kanonik JSON'u (rest-api, shodan — SOZLESME §4): RFC 8785 sıralama
+/// ve biçimi; ancak tamsayılar her büyüklükte **tam ondalık** yazılır, sonlu olmayan float
+/// `null` olur. Dize kayıt olduğu gibi döner (tırnaksız).
+pub fn record_json(value: &Json) -> String {
+    match value {
+        Json::Str(s) => s.clone(),
+        other => {
+            let mut out = String::new();
+            write_record(&mut out, other);
+            out
+        }
+    }
+}
+
+fn write_record(out: &mut String, value: &Json) {
+    match value {
+        Json::Int(i) => out.push_str(&i.to_string()),
+        Json::BigInt(s) => out.push_str(s),
+        Json::Float(f) if !f.is_finite() => out.push_str("null"),
+        Json::Array(items) => {
+            out.push('[');
+            for (idx, item) in items.iter().enumerate() {
+                if idx > 0 {
+                    out.push(',');
+                }
+                write_record(out, item);
+            }
+            out.push(']');
+        }
+        Json::Object(entries) => {
+            let mut sorted: Vec<&(String, Json)> = entries.iter().collect();
+            sorted.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
+            out.push('{');
+            for (idx, (k, v)) in sorted.into_iter().enumerate() {
+                if idx > 0 {
+                    out.push(',');
+                }
+                write_str(out, k);
+                out.push(':');
+                write_record(out, v);
+            }
+            out.push('}');
+        }
+        // null, bool, sonlu float, dize: JCS ile aynı (hata veremez)
+        other => {
+            let _ = write_jcs(out, other);
+        }
+    }
+}
+
 // --------------------------------------------------------------------------- Python v1
 
 /// Python `json.dumps(v, ensure_ascii=False, sort_keys=True, separators=(",", ":"))`.
@@ -278,6 +330,19 @@ mod tests {
         for (f, want) in cases {
             assert_eq!(py_float_repr(f), want, "{f:?}");
         }
+    }
+
+    #[test]
+    fn kayit_json_buyuk_tamsayi_ve_dize() {
+        let v = Json::Object(vec![
+            ("z".into(), Json::BigInt("123456789012345678901234567890".into())),
+            (
+                "a".into(),
+                Json::Array(vec![Json::Float(f64::NAN), Json::Float(1.0), Json::Bool(true)]),
+            ),
+        ]);
+        assert_eq!(record_json(&v), "{\"a\":[null,1,true],\"z\":123456789012345678901234567890}");
+        assert_eq!(record_json(&Json::Str("düz \"metin\"".into())), "düz \"metin\"");
     }
 
     #[test]

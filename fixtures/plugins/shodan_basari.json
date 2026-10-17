@@ -28,7 +28,7 @@
       {
         "url": "http://93.184.216.34:443",
         "title": "nginx",
-        "raw_content": "{'ip_str': '93.184.216.34', 'port': 443, 'product': 'nginx', 'org': 'Örnek'}",
+        "raw_content": "{\"ip_str\":\"93.184.216.34\",\"org\":\"Örnek\",\"port\":443,\"product\":\"nginx\"}",
         "published_at": null,
         "metadata": {
           "ip": "93.184.216.34",
@@ -39,7 +39,7 @@
       {
         "url": "http://1.2.3.4:22",
         "title": null,
-        "raw_content": "{'ip_str': '1.2.3.4', 'port': 22}",
+        "raw_content": "{\"ip_str\":\"1.2.3.4\",\"port\":22}",
         "published_at": null,
         "metadata": {
           "ip": "1.2.3.4",
