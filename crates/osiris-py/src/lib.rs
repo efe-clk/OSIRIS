@@ -111,6 +111,16 @@ fn html_title(markup: String) -> PyResult<Option<String>> {
     Ok(osiris_hash::html::parse(&markup).map_err(value_err)?.safe_title())
 }
 
+/// (link, title, summary, published)
+type FeedEntry = (Option<String>, Option<String>, Option<String>, Option<String>);
+
+/// RSS/Atom (eşdeğerlik testleri): `[(link, title, summary, published)]`, bozo.
+#[pyfunction]
+fn feed_parse(data: Vec<u8>) -> (Vec<FeedEntry>, bool) {
+    let f = osiris_feed::parse(&data);
+    (f.entries.into_iter().map(|e| (e.link, e.title, e.summary, e.published)).collect(), f.bozo)
+}
+
 /// Python `html.unescape`
 #[pyfunction]
 fn html_unescape(s: String) -> PyResult<String> {
@@ -349,6 +359,7 @@ fn osiris_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(html_select, m)?)?;
     m.add_function(wrap_pyfunction!(html_title, m)?)?;
     m.add_function(wrap_pyfunction!(html_unescape, m)?)?;
+    m.add_function(wrap_pyfunction!(feed_parse, m)?)?;
     m.add_function(wrap_pyfunction!(urljoin, m)?)?;
     m.add_function(wrap_pyfunction!(record_json, m)?)?;
     m.add_function(wrap_pyfunction!(record_json_from_text, m)?)?;

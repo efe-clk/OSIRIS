@@ -367,3 +367,73 @@ def test_unescape_and_urljoin_parity() -> None:
         b = rng.choice(bases)
         r = "".join(rng.choice(rels) for _ in range(rng.randint(1, 2)))
         assert native.urljoin(b, r) == urljoin(b, r), f"#{i} {b!r} {r!r}"
+
+
+# ---------------------------------------------------------------- R5: RSS/Atom (feedparser)
+def _feed_docs(rng: random.Random, n: int):
+    TXT = ["Merhaba", "a &amp; b", "&lt;p&gt;x&lt;/p&gt;", "&lt;b&gt;kalın&lt;/b&gt; yazı", "&lt;script&gt;k()&lt;/script&gt;ok",
+           "ş ğ ü", "&#252;", "&#x41;", "  boşluk  ", "<![CDATA[<i>c</i> & d]]>", "&lt;a href='javascript:x'&gt;l&lt;/a&gt;",
+           "&lt;img src=x onerror=y&gt;", "&lt;iframe&gt;i&lt;/iframe&gt;", "1 &lt; 2", "&lt;br&gt;", "&quot;q&quot;", "&lt;!-- y --&gt;", "€"]
+    def txt(): return "".join(rng.choice(TXT) for _ in range(rng.randint(0, 4)))
+    def rss_item():
+        parts = []
+        for tag in rng.sample(["title", "link", "description", "pubDate", "guid", "content:encoded", "dc:date", "description"], rng.randint(1, 6)):
+            if tag == "link":
+                parts.append(f"<link>https://x.example/{rng.randint(1,9)}</link>")
+            elif tag == "guid":
+                parts.append(f"<guid isPermaLink=\"{rng.choice(['true','false'])}\">https://g.example/{rng.randint(1,9)}</guid>")
+            elif tag == "pubDate":
+                parts.append(f"<pubDate> Mon, 05 Jan 2026 1{rng.randint(0,9)}:00:00 GMT </pubDate>")
+            elif tag == "dc:date":
+                parts.append("<dc:date>2026-01-01</dc:date>")
+            else:
+                parts.append(f"<{tag}>{txt()}</{tag}>")
+        return "<item>" + "".join(parts) + "</item>"
+    def atom_entry():
+        parts = []
+        for tag in rng.sample(["title", "link", "summary", "content", "published", "id", "updated", "link2"], rng.randint(1, 6)):
+            ty = rng.choice(["", " type=\"text\"", " type=\"html\"", " type=\"xhtml\""])
+            if tag == "link":
+                parts.append(f"<link href=\"https://a.example/{rng.randint(1,9)}\"/>")
+            elif tag == "link2":
+                parts.append(f"<link rel=\"{rng.choice(['self','alternate','enclosure'])}\" href=\"https://b.example/\"/>")
+            elif tag in ("published", "updated"):
+                parts.append(f"<{tag}>2026-01-0{rng.randint(1,9)}T00:00:00Z</{tag}>")
+            elif tag == "id":
+                parts.append("<id>urn:uuid:1</id>")
+            elif "xhtml" in ty:
+                parts.append(f"<{tag}{ty}><div xmlns=\"http://www.w3.org/1999/xhtml\"><p>{rng.choice(['x','ş & y','<b>k</b>'])}</p></div></{tag}>")
+            else:
+                parts.append(f"<{tag}{ty}>{txt()}</{tag}>")
+        return "<entry>" + "".join(parts) + "</entry>"
+    for _ in range(n):
+        if rng.random() < 0.6:
+            yield ('<?xml version="1.0" encoding="utf-8"?><rss version="2.0" '
+                   'xmlns:content="http://purl.org/rss/1.0/modules/content/" '
+                   'xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>K</title>'
+                   + "".join(rss_item() for _ in range(rng.randint(1, 3))) + "</channel></rss>")
+        else:
+            yield ('<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom">'
+                   "<title>K</title>" + "".join(atom_entry() for _ in range(rng.randint(1, 3))) + "</feed>")
+
+
+def _unescape_markup(s):
+    return (s or "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">") \
+        .replace('"', "").replace("'", "")
+
+
+def test_feed_parity(pipeline) -> None:
+    """rss plugin'i: sözleşme content_hash düzeyindedir (SOZLESME §4) — girdi sayısı, link,
+    published birebir; summary clean() sonrası aynı; başlık yalnızca kaçış biçiminde farklı olabilir."""
+    feedparser = pytest.importorskip("feedparser")
+    rng = random.Random(12)
+    for i, doc in enumerate(_feed_docs(rng, N // 3)):
+        fp = feedparser.parse(doc.encode())
+        ents, _bozo = native.feed_parse(doc.encode())
+        assert len(ents) == len(fp.entries), f"#{i} {doc!r}"
+        for (link, title, summary, published), e in zip(ents, fp.entries, strict=True):
+            assert link == (e.get("link", "") or None), f"#{i} link {doc!r}"
+            assert published == (e.get("published", "") or None), f"#{i} published {doc!r}"
+            want_summary = e.get("summary", "") or e.get("description", "")
+            assert pipeline._py_clean(summary or "") == pipeline._py_clean(want_summary), f"#{i} {doc!r}"
+            assert _unescape_markup(title) == _unescape_markup(str(e.get("title", "")) or None), f"#{i} {doc!r}"
