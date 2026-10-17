@@ -20,6 +20,8 @@ from typing import Any, Protocol
 
 import rfc8785
 
+from osiris._native import native as _rust
+
 logger = logging.getLogger(__name__)
 
 GENESIS = "GENESIS"
@@ -50,7 +52,17 @@ def _record(user_id: str | None, action: str, resource: str | None,
 
 def canonical_payload(user_id: str | None, action: str, resource: str | None,
                       detail: dict[str, Any] | None, chain_version: int) -> str:
-    """Kaydın hash'e giren kanonik dizgesi (sürüme göre)."""
+    """Kaydın hash'e giren kanonik dizgesi (sürüme göre). Varsayılan: Rust (osiris._native)."""
+    if _rust is None:
+        return _py_canonical_payload(user_id, action, resource, detail, chain_version)
+    if chain_version == 1:
+        # v1 json.dumps(default=str) idi: JSON dışı nesneler önce dizeye çevrilir
+        detail = json.loads(json.dumps(detail, default=str))
+    return _rust.audit_canonical_payload(user_id, action, resource, detail, chain_version)
+
+
+def _py_canonical_payload(user_id: str | None, action: str, resource: str | None,
+                          detail: dict[str, Any] | None, chain_version: int) -> str:
     record = _record(user_id, action, resource, detail)
     if chain_version == 1:
         return json.dumps(record, ensure_ascii=False, sort_keys=True,
@@ -62,6 +74,12 @@ def canonical_payload(user_id: str | None, action: str, resource: str | None,
 
 def chain_hash(prev: str | None, payload: str) -> str:
     """``sha256(prev | payload)`` — prev None ise GENESIS."""
+    if _rust is None:
+        return _py_chain_hash(prev, payload)
+    return _rust.audit_chain_hash(prev, payload)
+
+
+def _py_chain_hash(prev: str | None, payload: str) -> str:
     anchor = prev if prev else GENESIS
     return hashlib.sha256(f"{anchor}|{payload}".encode()).hexdigest()
 
@@ -191,12 +209,28 @@ def append_audit(conn: _Connection, user_id: str | None, action: str,
     return {"prev_hash": prev_hash, "hash": digest, "chain_version": version}
 
 
+def _parse_detail(detail: Any) -> Any:
+    if isinstance(detail, str):
+        try:
+            return json.loads(detail)
+        except ValueError:
+            return {}
+    return detail
+
+
 def verify_records(rows: list[tuple]) -> dict[str, Any]:
     """Artan id sıralı kayıtları doğrular (saf fonksiyon — fixture'lar da kullanır).
 
     Satır: ``(id, user_id, action, resource, detail, prev_hash, hash[, chain_version])``.
     İlk satırın beyan ettiği öncül kabul edilir (pencere başı).
     """
+    if _rust is None:
+        return _py_verify_records(rows)
+    return _rust.audit_verify_records(
+        [(*row[:4], _parse_detail(row[4]), *row[5:]) for row in rows])
+
+
+def _py_verify_records(rows: list[tuple]) -> dict[str, Any]:
     if not rows:
         return {"ok": True, "checked": 0}
     prev: str | None = rows[0][5]
@@ -206,16 +240,12 @@ def verify_records(rows: list[tuple]) -> dict[str, Any]:
         version = row[7] if len(row) > 7 and row[7] is not None else 1
         if prev_hash != prev:
             return {"ok": False, "checked": checked, "error": "prev_hash uyuşmazlığı"}
-        if isinstance(detail, str):
-            try:
-                detail = json.loads(detail)
-            except ValueError:
-                detail = {}
+        detail = _parse_detail(detail)
         try:
-            payload = canonical_payload(user_id, action, resource, detail, int(version))
+            payload = _py_canonical_payload(user_id, action, resource, detail, int(version))
         except (ValueError, TypeError) as exc:
             return {"ok": False, "checked": checked, "error": f"kanonikleştirme: {exc}"}
-        if chain_hash(prev, payload) != digest:
+        if _py_chain_hash(prev, payload) != digest:
             return {"ok": False, "checked": checked, "error": "hash uyuşmazlığı"}
         prev = digest
         checked += 1

@@ -27,6 +27,7 @@ import redis
 from bs4 import BeautifulSoup
 from langdetect import detect
 from osiris import queue as osiris_queue
+from osiris._native import native as _rust
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +134,8 @@ class ProcessingPipeline:
         language = self.detect_language(cleaned)
         entities = self.extract_entities(cleaned)
         topics = self.classify(cleaned)
-        content_hash = hashlib.sha256(cleaned.encode()).hexdigest()
+        content_hash = (_rust.content_hash(cleaned) if _rust is not None
+                        else hashlib.sha256(cleaned.encode()).hexdigest())
         embedding = self.generate_embedding(cleaned)
 
         # Mesaj üst düzeyindeki source_id öncelikli; yalnızca geçerli UUID kabul edilir
@@ -155,7 +157,16 @@ class ProcessingPipeline:
         }
 
     def clean(self, text: str) -> str:
-        """HTML soyutlama ve boşluk normalizasyonu (DoS korumalı)."""
+        """HTML soyutlama ve boşluk normalizasyonu (DoS korumalı) — SOZLESME §1.
+
+        Varsayılan: Rust (bs4 html.parser birebir portu, osiris._native); Python
+        referansı `_py_clean` (OSIRIS_NATIVE=python).
+        """
+        if _rust is not None:
+            return _rust.clean_text(text) if text else ""
+        return self._py_clean(text)
+
+    def _py_clean(self, text: str) -> str:
         if not text:
             return ""
         text = text[:_MAX_CONTENT_CHARS]
@@ -177,6 +188,31 @@ class ProcessingPipeline:
 
     def extract_entities(self, text: str) -> list[dict[str, Any]]:
         """Varlık çıkarma: email, IP, domain, telefon, kripto, CVE (regex) + ONNX NER."""
+        if _rust is not None:
+            entities = _rust.extract_entities(text)  # regex kısmı Rust'ta (SOZLESME §8)
+        else:
+            entities = self._py_extract_regex(text)
+        seen = {(e["type"], e["value"].lower()) for e in entities}
+
+        def _add(etype: str, value: str) -> None:
+            v = value.strip()[:500]
+            if not v or (etype, v.lower()) in seen:
+                return
+            seen.add((etype, v.lower()))
+            entities.append({"type": etype, "value": v})
+
+        nlp = self.nlp
+        if nlp is not None:
+            try:
+                for ent in nlp.extract(text):  # person / org / location (regex'ten SONRA)
+                    _add(ent["type"], ent["value"])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("NER başarısız, regex sonuçları kullanılıyor: %s", exc)
+
+        return entities
+
+    def _py_extract_regex(self, text: str) -> list[dict[str, Any]]:
+        """Regex çıkarıcının Python referansı (OSIRIS_NATIVE=python)."""
         entities: list[dict[str, Any]] = []
         seen: set[tuple[str, str]] = set()
 
@@ -220,15 +256,6 @@ class ProcessingPipeline:
             _add("crypto_address", match.group(0))
         for match in _CVE_RE.finditer(text):
             _add("cve", match.group(0).upper())
-
-        nlp = self.nlp
-        if nlp is not None:
-            try:
-                for ent in nlp.extract(text):  # person / org / location (regex'ten SONRA)
-                    _add(ent["type"], ent["value"])
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("NER başarısız, regex sonuçları kullanılıyor: %s", exc)
-
         return entities
 
     def classify(self, text: str) -> list[str]:

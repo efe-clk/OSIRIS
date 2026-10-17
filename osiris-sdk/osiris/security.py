@@ -11,6 +11,8 @@ import os
 import socket
 from urllib.parse import urlparse
 
+from osiris._native import native as _rust
+
 # RFC1918 + loopback + link-local + multicast + CGNAT + dokümantasyon blokları
 _BLOCKED_NETWORKS = [
     ipaddress.ip_network("127.0.0.0/8"),
@@ -59,7 +61,7 @@ def _ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return any(ip in net for net in _BLOCKED_NETWORKS)
 
 
-def resolve_safe_ips(host: str) -> list[str]:
+def _py_resolve_safe_ips(host: str) -> list[str]:
     """Host'u çözer ve yalnızca dış (izinli) IP'leri döner; aksi halde ValueError.
 
     Kayıtlardan biri bile iç ağdaysa host tümden reddedilir; çözülemeyen host da
@@ -124,7 +126,7 @@ def _ambiguous_url_chars(url: str) -> bool:
     return any(c == "\\" or c < " " or c == "\x7f" for c in url)
 
 
-def assert_safe_url(url: str, *, allow_onion: bool = False) -> str:
+def _py_assert_safe_url(url: str, *, allow_onion: bool = False) -> str:
     """URL'yi SSRF'e karşı doğrular. Geçersizse ValueError yükseltir.
 
     - http/https zorunlu (onion için allow_onion ile .onion host'una izin)
@@ -155,7 +157,7 @@ def assert_safe_url(url: str, *, allow_onion: bool = False) -> str:
     return url
 
 
-def sanitize_irc_token(value: str, max_len: int = 64) -> str:
+def _py_sanitize_irc_token(value: str, max_len: int = 64) -> str:
     """IRC nick/kanal enjeksiyonuna karşı temizler (CRLF + boşluk kontrolü)."""
     if not value:
         raise ValueError("Boş IRC değeri")
@@ -169,7 +171,7 @@ def sanitize_irc_token(value: str, max_len: int = 64) -> str:
     return value
 
 
-def sanitize_channel(value: str) -> str:
+def _py_sanitize_channel(value: str) -> str:
     if not value or len(value) > 64:
         raise ValueError("Geçersiz kanal")
     if any(c in value for c in ("\r", "\n", "\0", " ", ",")):
@@ -179,7 +181,7 @@ def sanitize_channel(value: str) -> str:
     return value
 
 
-def sanitize_domain(domain: str) -> str:
+def _py_sanitize_domain(domain: str) -> str:
     """DNS/WHOIS için domain doğrulama (CRLF enjeksiyonunu engeller)."""
     if not domain or len(domain) > 253:
         raise ValueError("Geçersiz domain")
@@ -199,7 +201,7 @@ def sanitize_domain(domain: str) -> str:
     return d
 
 
-def sanitize_hostname(host: str, max_len: int = 253) -> str:
+def _py_sanitize_hostname(host: str, max_len: int = 253) -> str:
     if not host or len(host) > max_len:
         raise ValueError("Geçersiz host")
     h = host.strip().lower()
@@ -223,13 +225,73 @@ def cap_list(value: list, limit: int) -> list:
     return value[:limit] if isinstance(value, list) else []
 
 
-def mask_secret(value: str | None, keep: int = 4) -> str:
+def _py_mask_secret(value: str | None, keep: int = 4) -> str:
     if not value:
         return "***"
     s = str(value)
     if len(s) <= keep:
         return "***"
     return "*" * (len(s) - keep) + s[-keep:]
+
+
+# --------------------------------------------------------------------------- Rust (R4)
+# Varsayılan uygulama Rust'tır (osiris._native); `_py_*` fonksiyonları referans
+# uygulamadır (OSIRIS_NATIVE=python) ve iki yol aynı testleri/fixture'ları geçer.
+
+def _resolver(host: str) -> list[str]:
+    # Modül genelinden çağrılır ki testlerin `_host_ips` taklidi Rust yolunda da geçerli olsun
+    return _host_ips(host)
+
+
+def resolve_safe_ips(host: str) -> list[str]:
+    """Host'u çözer ve yalnızca dış (izinli) IP'leri döner; aksi halde ValueError.
+
+    Kayıtlardan biri bile iç ağdaysa host tümden reddedilir; çözülemeyen host da
+    reddedilir (fail-closed). Ham soket açan plugin'ler bağlantıyı DÖNEN IP'lere
+    yapmalıdır — host adıyla yeniden bağlanmak DNS rebinding'e açık kapı bırakır.
+    """
+    if _rust is None:
+        return _py_resolve_safe_ips(host)
+    return _rust.resolve_safe_ips(host, _resolver)
+
+
+def assert_safe_url(url: str, *, allow_onion: bool = False) -> str:
+    """URL'yi SSRF'e karşı doğrular (bkz. `_py_assert_safe_url`). Geçersizse ValueError."""
+    if _rust is None:
+        return _py_assert_safe_url(url, allow_onion=allow_onion)
+    return _rust.assert_safe_url(url, allow_onion, _resolver)
+
+
+def sanitize_irc_token(value: str, max_len: int = 64) -> str:
+    """IRC nick/kanal enjeksiyonuna karşı temizler (CRLF + boşluk kontrolü)."""
+    if _rust is None:
+        return _py_sanitize_irc_token(value, max_len)
+    return _rust.sanitize_irc_token(value, max_len)
+
+
+def sanitize_channel(value: str) -> str:
+    if _rust is None:
+        return _py_sanitize_channel(value)
+    return _rust.sanitize_channel(value)
+
+
+def sanitize_domain(domain: str) -> str:
+    """DNS/WHOIS için domain doğrulama (CRLF enjeksiyonunu engeller)."""
+    if _rust is None:
+        return _py_sanitize_domain(domain)
+    return _rust.sanitize_domain(domain)
+
+
+def sanitize_hostname(host: str, max_len: int = 253) -> str:
+    if _rust is None:
+        return _py_sanitize_hostname(host, max_len)
+    return _rust.sanitize_hostname(host, max_len)
+
+
+def mask_secret(value: str | None, keep: int = 4) -> str:
+    if _rust is None:
+        return _py_mask_secret(value, keep)
+    return _rust.mask_secret(str(value) if value else None, keep)
 
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})

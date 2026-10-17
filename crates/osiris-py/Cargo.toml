@@ -1,0 +1,22 @@
+[package]
+name = "osiris-py"
+description = "OSIRIS Python köprüsü (PyO3) — geçiş dönemi; R7'de silinir"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "osiris_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+osiris-extract.workspace = true
+osiris-hash.workspace = true
+osiris-security.workspace = true
+pyo3.workspace = true
+
+[lints]
+workspace = true
