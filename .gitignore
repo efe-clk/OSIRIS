@@ -63,3 +63,6 @@ Thumbs.db
 models/*
 !models/README.md
 !models/download.py
+
+# Rust
+/target/

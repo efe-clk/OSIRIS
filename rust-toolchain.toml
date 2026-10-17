@@ -1,0 +1,5 @@
+# Kararlı Rust sürümü sabit (CI ve yerel geliştirme aynı derleyiciyi kullanır).
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
