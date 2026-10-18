@@ -167,6 +167,9 @@ jobs:
         run: |
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
         working-directory: osiris-web-ui
+      - name: Lint (ESLint)
+        run: npm run lint
+        working-directory: osiris-web-ui
       - name: Derle
         run: npm run build
         working-directory: osiris-web-ui

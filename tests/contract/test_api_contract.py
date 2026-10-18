@@ -21,6 +21,7 @@ def _expected(role: str, minimum: str, ok: int) -> int:
 # (yöntem, yol, gövde, en düşük rol, yetkili çağrıda beklenen kod)
 # Gövdeler canlı sistemde güvenlidir: var olmayan kimlikler, iç ağ URL'si (SSRF → 502).
 MATRIX = [
+    ("GET", "/auth/me", None, "viewer", 200),
     ("GET", "/plugins", None, "viewer", 200),
     ("GET", "/stats", None, "viewer", 200),
     ("GET", "/items/recent", None, "viewer", 200),
@@ -71,6 +72,14 @@ def test_health_is_open(client) -> None:
     assert r.status_code == 200 and r.json()["status"] == "ok"
 
 
+@pytest.mark.parametrize("role", ["viewer", "analyst", "admin"])
+def test_auth_me_reports_role(client, keys, role) -> None:
+    r = client.get("/auth/me", headers=keys[role])
+    assert r.status_code == 200, r.text
+    me = r.json()
+    assert set(me) == {"user", "role"} and me["role"] == role and me["user"]
+
+
 def test_token_flow(client, keys) -> None:
     assert client.post("/auth/token", json={"api_key": "yanlis"}).status_code in (401, 503)
     r = client.post("/auth/token", json={"api_key": keys["admin"]["X-API-Key"], "role": "viewer"})
@@ -81,6 +90,7 @@ def test_token_flow(client, keys) -> None:
     assert tok["token_type"] == "bearer" and tok["expires_in"] > 0
     bearer = {"Authorization": f"Bearer {tok['access_token']}"}
     assert client.get("/plugins", headers=bearer).status_code == 200
+    assert client.get("/auth/me", headers=bearer).json()["role"] == "viewer"
     assert client.post("/alerts/test", headers=bearer, json={"text": "x"}).status_code == 403
     assert client.get("/plugins", headers={"Authorization": "Bearer a.b.c"}).status_code == 401
     assert client.post("/auth/token", json={"api_key": keys["admin"]["X-API-Key"],
@@ -206,6 +216,32 @@ def test_source_update_and_detail(client, keys, run_id) -> None:
                             json={"config": {"query": None}, "schedule": None}).status_code == 200
         d = client.get(f"/sources/{sid}", headers=keys["viewer"]).json()
         assert d["config"] == {"api_key": "********"} and d["schedule"] is None
+    finally:
+        assert client.delete(f"/sources/{sid}", headers=h).status_code == 200
+
+
+def test_source_nested_secrets_masked(client, keys, run_id) -> None:
+    h = keys["analyst"]
+    r = client.post("/sources", headers=h, json={
+        "name": f"contract-nested-{run_id}", "plugin_id": "rest-api", "network_type": "api",
+        "enabled": False, "url": "https://example.invalid/api",
+        "config": {"endpoint": "https://example.invalid/api",
+                   "headers": {"Authorization": "Bearer contract-ic-sir", "Accept": "application/json"},
+                   "params": {"api_key": "contract-param-sir", "q": "x"}}})
+    assert r.status_code == 200, r.text
+    sid = r.json()["id"]
+    try:
+        d = client.get(f"/sources/{sid}", headers=keys["viewer"]).json()
+        assert "contract-ic-sir" not in str(d) and "contract-param-sir" not in str(d)
+        assert d["config"]["headers"] == {"Authorization": "********", "Accept": "application/json"}
+        assert d["config"]["params"] == {"api_key": "********", "q": "x"}
+        # Maskeli değeri geri göndermek sırrı ezmez; yalnızca açık alan değişir.
+        cfg = d["config"]
+        cfg["params"]["q"] = "y"
+        assert client.patch(f"/sources/{sid}", headers=h, json={"config": cfg}).status_code == 200
+        d = client.get(f"/sources/{sid}", headers=keys["viewer"]).json()
+        assert d["config"]["params"] == {"api_key": "********", "q": "y"}
+        assert d["config"]["headers"]["Authorization"] == "********"
     finally:
         assert client.delete(f"/sources/{sid}", headers=h).status_code == 200
 

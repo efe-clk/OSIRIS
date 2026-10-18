@@ -451,24 +451,7 @@ export const Api = {
  *  admin: GET /auth/keys → 200. analyst: POST /collect (var olmayan plugin) → 404,
  *  viewer aynı çağrıda 403 alır (rol denetimi plugin denetiminden önce çalışır). */
 export async function resolveRole(cred: { key?: string; jwt?: string }): Promise<Role> {
-  await api<Plugin[]>("/plugins", { cred, timeoutMs: 15_000 });
-  try {
-    await api("/auth/keys", { cred, timeoutMs: 15_000 });
-    return "admin";
-  } catch (e) {
-    if (!(e instanceof ApiError) || e.status !== 403) throw e;
-  }
-  try {
-    await api("/collect", {
-      cred,
-      method: "POST",
-      timeoutMs: 15_000,
-      body: JSON.stringify({ plugin_id: "osiris-rol-yoklamasi", config: {} }),
-    });
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) return "analyst";
-    if (e instanceof ApiError && e.status === 403) return "viewer";
-    throw e;
-  }
-  return "analyst";
+  const me = await api<{ user: string; role: string }>("/auth/me", { cred, timeoutMs: 15_000 });
+  if (me.role in ROLE_RANK) return me.role as Role;
+  throw new Error(`Bilinmeyen rol: ${me.role}`);
 }

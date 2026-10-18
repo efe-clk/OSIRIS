@@ -198,6 +198,7 @@ async function route(method: string, path: string, query: URLSearchParams, body:
   }
 
   // auth
+  if (path === "/auth/me") return ok({ user: "demo", role: "admin" });
   if (path === "/auth/keys" && method === "GET") return ok(KEYS);
   if (path === "/auth/keys" && method === "POST") {
     const raw = `osiris_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
@@ -403,7 +404,7 @@ async function route(method: string, path: string, query: URLSearchParams, body:
     const sources = (body.sources as string[]) ?? [];
     const entities = (body.entities as { type: string; value: string }[]) ?? [];
     const gen = new Date().toISOString();
-    let content = "";
+    let content: string;
     if (fmt === "markdown") {
       content = `# ${title}\n\n**Oluşturulma:** ${gen}\n**Kapsam:** ${body.scope ?? ""}\n\n## Özet\n\n${body.summary ?? ""}\n\n## Bulgular\n\n${findings.map((f, i) => `### ${i + 1}. ${f.title}\n\n${f.description}\n`).join("\n")}\n## Kaynaklar\n\n${sources.map((s) => `- ${s}`).join("\n")}\n`;
     } else if (fmt === "html") {
