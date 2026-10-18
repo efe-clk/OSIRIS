@@ -510,7 +510,9 @@ kütüphanede hazır olan işlevler uç olarak açıldı: `POST /search/semantic
   karşı tarayıcıda uçtan uca, hem doğrudan hem dış nginx → UI nginx zinciri üzerinden denendi.
 - **Not:** `/api/docs` (Swagger UI) betiklerini jsDelivr'dan yükler; Nginx CSP'si
   (`default-src 'self'`) bunu Nginx üzerinden engeller. Doğrudan API portunda (`127.0.0.1:8001/docs`)
-  çalışır; `/api/openapi.json` her iki yoldan erişilebilir.
+  çalışır; `/api/openapi.json` her iki yoldan erişilebilir. **Düzeltildi (2026-10-18):** Swagger UI
+  dosyaları ikiliye gömüldü (`crates/osiris-server/assets/swagger-ui/`, `/docs-assets/*`), satır
+  içi betik kaldırıldı; `/api/docs` Nginx CSP'siyle çalışır.
 
 **Rust geçişi tamamlandı.** Sonraki işler (geçiş dışı): uyarıların işçide yayımlanması, 2FA,
 sır kasası, PDF rapor, WASM plugin'leri, :443 geçişi.

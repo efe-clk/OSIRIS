@@ -1,13 +1,15 @@
 //! OpenAPI 3 belgesi (`/openapi.json`, utoipa) ve Swagger UI (`/docs`).
 //!
 //! `/docs` belgeyi **göreli** yoldan yükler: Nginx `/api/` önekiyle de çalışır
-//! (`/api/docs` → `/api/openapi.json`). Swagger UI dosyaları FastAPI'deki gibi jsDelivr'dan
-//! gelir; imaja gömülmez.
+//! (`/api/docs` → `/api/openapi.json`). Swagger UI dosyaları (`assets/swagger-ui/`) ikiliye
+//! gömülüdür ve `/docs-assets/*` altında sunulur; satır içi betik yoktur, böylece sayfa Nginx'in
+//! CSP'siyle (`script-src 'self'`) çalışır ve tarayıcı dış CDN'e gitmez.
 
 use super::Shared;
 use super::routes::*;
 use axum::Router;
-use axum::response::{Html, IntoResponse};
+use axum::http::header;
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -51,16 +53,39 @@ impl Modify for Security {
 )]
 pub struct ApiDoc;
 
-const DOCS: &str = r##"<!DOCTYPE html>
+pub const DOCS: &str = r##"<!DOCTYPE html>
 <html lang="tr"><head><meta charset="utf-8"><title>OSIRIS API - Swagger UI</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="docs-assets/swagger-ui.css">
 </head><body><div id="swagger-ui"></div>
-<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script>SwaggerUIBundle({url: "openapi.json", dom_id: "#swagger-ui"});</script>
+<script src="docs-assets/swagger-ui-bundle.js"></script>
+<script src="docs-assets/init.js"></script>
 </body></html>"##;
+
+const SWAGGER_JS: &str = include_str!("../../assets/swagger-ui/swagger-ui-bundle.js");
+const SWAGGER_CSS: &str = include_str!("../../assets/swagger-ui/swagger-ui.css");
+const SWAGGER_INIT: &str = include_str!("../../assets/swagger-ui/init.js");
+
+/// Sürüme bağlı gömülü dosya: bir gün önbelleklenebilir (yeni imajda içerik değişir).
+fn asset(content_type: &'static str, body: &'static str) -> Response {
+    ([(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, "public, max-age=86400")], body)
+        .into_response()
+}
 
 pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/openapi.json", get(|| async { axum::Json(ApiDoc::openapi()).into_response() }))
         .route("/docs", get(|| async { Html(DOCS) }))
+        .route(
+            "/docs-assets/swagger-ui-bundle.js",
+            get(|| async { asset("text/javascript; charset=utf-8", SWAGGER_JS) }),
+        )
+        .route(
+            "/docs-assets/swagger-ui.css",
+            get(|| async { asset("text/css; charset=utf-8", SWAGGER_CSS) }),
+        )
+        .route(
+            "/docs-assets/init.js",
+            get(|| async { asset("text/javascript; charset=utf-8", SWAGGER_INIT) }),
+        )
 }

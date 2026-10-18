@@ -42,11 +42,10 @@ block). Error messages (`detail`) are in Turkish; their meaning is given in the 
 | Time | UTC, ISO 8601: `2026-10-18T12:49:29.085604Z` (no fraction when microseconds are zero) |
 | Identifiers | UUID strings |
 
-> **Swagger UI and Nginx:** the `/docs` page loads the Swagger UI files from `cdn.jsdelivr.net`
-> and runs an inline script. Nginx's Content-Security-Policy (`default-src 'self'`) does not allow
-> this, so `https://<server>:8443/api/docs` renders blank in a browser. For interactive docs reach
-> the API directly (`ssh -L 8001:127.0.0.1:8001 server` → `http://127.0.0.1:8001/docs`) or load
-> `/api/openapi.json` into an OpenAPI viewer.
+> **Swagger UI:** `https://<server>:8443/api/docs` is the interactive documentation. Its files
+> (`swagger-ui-dist` 5.33.0) are embedded in the binary and served under `/docs-assets/*`; no
+> external CDN or inline script is used, so the page works under Nginx's CSP. Use the
+> "Authorize" button to enter an `X-API-Key` or a Bearer token and try the endpoints.
 
 ### 1.1 Authentication
 
@@ -614,7 +613,8 @@ route templates; path values and query strings are never recorded.
   `PATCH /sources/{id}` (secrets masked at every depth, the mask keeps the old value on update,
   `config` merging); cron validation of source `schedule`; `GET /graph/analysis`;
   `GET /graph/export`; `POST /reports/generate` (Markdown/HTML/JSON/STIX); `include_items`
-  preview for `/collect` and `/sources/{id}/collect`; `PATCH` in CORS.
+  preview for `/collect` and `/sources/{id}/collect`; `PATCH` in CORS. Swagger UI (`/docs`)
+  files are embedded in the binary (`/docs-assets/*`); no external CDN.
 - **1.0.0-rc (Rust R7)** — Python implementation removed, contract unchanged. `osiris-server migrate`;
   migration 006 drops the old `items.embedding` column; audit chain v2 only.
 - **Rust R6** — API rewritten in Rust (axum) with an unchanged contract. Per-identity quota

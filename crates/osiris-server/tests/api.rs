@@ -85,6 +85,39 @@ async fn saglik_ve_bilinmeyen_rotalar() {
     }
 }
 
+/// Swagger UI dış CDN'siz ve satır içi betiksiz (Nginx CSP `script-src 'self'`).
+#[tokio::test]
+async fn swagger_ui_yerel_ve_csp_uyumlu() {
+    let a = app();
+    let get = |path: &'static str| {
+        let a = a.clone();
+        async move {
+            let req = Request::builder().uri(path).body(Body::empty()).unwrap();
+            let resp = a.oneshot(req).await.unwrap();
+            let status = resp.status();
+            let ctype =
+                resp.headers()[axum::http::header::CONTENT_TYPE].to_str().unwrap().to_owned();
+            let body = resp.into_body().collect().await.unwrap().to_bytes();
+            (status, ctype, String::from_utf8(body.to_vec()).unwrap())
+        }
+    };
+    let (s, ctype, html) = get("/docs").await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(ctype.starts_with("text/html"), "{ctype}");
+    assert!(!html.contains("http://") && !html.contains("https://"), "dış adres: {html}");
+    assert!(!html.contains("<script>"), "satır içi betik: {html}");
+    for (path, kind, needle) in [
+        ("/docs-assets/swagger-ui-bundle.js", "text/javascript", "SwaggerUIBundle"),
+        ("/docs-assets/swagger-ui.css", "text/css", ".swagger-ui"),
+        ("/docs-assets/init.js", "text/javascript", "openapi.json"),
+    ] {
+        let (s, ctype, body) = get(path).await;
+        assert_eq!(s, StatusCode::OK, "{path}");
+        assert!(ctype.starts_with(kind), "{path}: {ctype}");
+        assert!(body.contains(needle), "{path}");
+    }
+}
+
 #[tokio::test]
 async fn kimlik_ve_rol_matrisi() {
     let a = app();

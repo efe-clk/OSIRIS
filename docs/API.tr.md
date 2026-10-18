@@ -41,11 +41,10 @@ Bu belge API'nin tüm uçlarını, istek/yanıt biçimlerini, sınırlarını ve
 | Zaman | UTC, ISO 8601: `2026-10-18T12:49:29.085604Z` (mikrosaniye sıfırsa kesirsiz) |
 | Kimlikler | UUID dizgesi |
 
-> **Swagger UI ve Nginx:** `/docs` sayfası Swagger UI dosyalarını `cdn.jsdelivr.net`'ten ve satır
-> içi bir betikle yükler. Nginx'in Content-Security-Policy başlığı (`default-src 'self'`) buna
-> izin vermediği için `https://<sunucu>:8443/api/docs` tarayıcıda boş açılır. Etkileşimli doküman
-> için API'ye doğrudan erişin (`ssh -L 8001:127.0.0.1:8001 sunucu` → `http://127.0.0.1:8001/docs`)
-> ya da `/api/openapi.json`'ı bir OpenAPI görüntüleyicisine yükleyin.
+> **Swagger UI:** `https://<sunucu>:8443/api/docs` etkileşimli dokümandır. Dosyaları
+> (`swagger-ui-dist` 5.33.0) ikiliye gömülüdür ve `/docs-assets/*` altında sunulur; dış CDN ya da
+> satır içi betik kullanılmaz, sayfa Nginx'in CSP'siyle çalışır. "Authorize" düğmesiyle
+> `X-API-Key` ya da Bearer jeton girip uçları deneyebilirsiniz.
 
 ### 1.1 Kimlik doğrulama
 
@@ -606,7 +605,8 @@ sorgu dizgeleri yazılmaz.
   `PATCH /sources/{id}` (sırlar her derinlikte maskeli, maske güncellemede eski değeri korur,
   `config` birleştirme); kaynak `schedule` cron doğrulaması; `GET /graph/analysis`;
   `GET /graph/export`; `POST /reports/generate` (Markdown/HTML/JSON/STIX); `/collect` ve
-  `/sources/{id}/collect` için `include_items` önizlemesi; CORS'ta `PATCH`.
+  `/sources/{id}/collect` için `include_items` önizlemesi; CORS'ta `PATCH`. Swagger UI (`/docs`)
+  dosyaları ikiliye gömüldü (`/docs-assets/*`); dış CDN kullanılmıyor.
 - **1.0.0-rc (Rust R7)** — Python uygulaması kaldırıldı, sözleşme aynı. `osiris-server migrate`;
   migration 006 eski `items.embedding` sütununu siler; denetim zinciri yalnızca v2.
 - **Rust R6** — API Rust'ta (axum) yeniden yazıldı, sözleşme değişmedi. Kimlik başına kota

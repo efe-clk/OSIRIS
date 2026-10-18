@@ -35,9 +35,9 @@ Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; style-s
 ```
 
 `style-src 'unsafe-inline'` web arayüzünün satır içi `style` öznitelikleri (graf renkleri,
-çubuklar) içindir; betikler yalnızca aynı kökenden yüklenir. Bu politika API'nin `/api/docs`
-(Swagger UI) sayfasının dış CDN'den betik yüklemesine izin vermez; etkileşimli doküman için API'ye
-doğrudan bağlanın (bkz. [docs/API.tr.md](../../docs/API.tr.md#1-temeller)).
+çubuklar) içindir; betikler yalnızca aynı kökenden yüklenir. API'nin `/api/docs` (Swagger UI)
+sayfası da bu politikaya uyar: dosyaları API ikilisine gömülüdür ve aynı kökenden gelir
+(bkz. [docs/API.tr.md](../../docs/API.tr.md#1-temeller)).
 
 ## Sertifika
 
