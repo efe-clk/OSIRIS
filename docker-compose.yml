@@ -142,7 +142,8 @@ services:
       context: .
       dockerfile: deploy/docker/Dockerfile
     container_name: osiris-api
-    mem_limit: 512m
+    # Semantik arama sorgu vektörünü API üretir (embedding modeli ~120 MB, ilk aramada yüklenir)
+    mem_limit: 1g
     command: ["api", "--addr", "0.0.0.0:8000"]
     environment:
       <<: *osiris-env
@@ -152,6 +153,10 @@ services:
       OSIRIS_API_RATE_PER_MIN: ${OSIRIS_API_RATE_PER_MIN:-600}
       OSIRIS_METRICS_ADDR: 0.0.0.0:9464
       OSIRIS_CORS_ORIGINS: ${OSIRIS_CORS_ORIGINS:-http://localhost:3000}
+      # /search/semantic: işçiyle aynı model (modeller yoksa uç 503 döner, API çalışmaya devam eder)
+      OSIRIS_EMBEDDING_MODEL: ${OSIRIS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+    volumes:
+      - ./models:/app/models:ro
     healthcheck:
       test: ["CMD", "osiris-server", "health", "--addr", "127.0.0.1:8000"]
       interval: 30s
@@ -223,6 +228,11 @@ services:
     logging: *default-logging
     depends_on:
       - osiris-api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     ports:
       # Yalnızca localhost (dış erişim nginx /ui üzerinden).
       - "127.0.0.1:3001:3000"

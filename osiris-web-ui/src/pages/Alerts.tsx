@@ -1,111 +1,157 @@
-import { useEffect, useState } from "react";
-import { del, get, post, type SavedQuery } from "../api";
+// Uyarı kuralları: kayıtlı sorgular (GET/POST/DELETE /saved-queries) ve kuru deneme (POST /alerts/test).
+// alert_enabled sorgular pipeline'da yeni öğelerle eşleşince e-posta/Telegram/webhook işleyicilerine gider.
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { Api, can, QUERY_LABEL, QUERY_TYPES, type AlertMatch } from "../api";
 import { useAuth } from "../auth";
-
-const inputCls =
-  "w-full rounded-lg border border-osiris-panel bg-osiris-bg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-osiris-accent focus:outline-none";
+import { Empty, Label, Loading, Notice, PageHeader, Pill, Segmented, Toggle, useLoad, useUi } from "../ui";
+import { errMsg, fmtAgo } from "../util";
 
 export default function Alerts() {
   const { role } = useAuth();
-  const canWrite = role !== "viewer";
-  const [queries, setQueries] = useState<SavedQuery[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState("");
+  const { confirm, toast } = useUi();
+  const [only, setOnly] = useState<"all" | "on">("all");
+  const list = useLoad(() => Api.savedQueries(only === "on" ? true : undefined), [only]);
+  const [form, setForm] = useState({ name: "", query_text: "", query_type: "fts", alert_enabled: true });
+  const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
-  const [testText, setTestText] = useState("");
-  const [testResult, setTestResult] = useState<{ query_name: string; matched: string }[] | null>(null);
-
-  const refresh = async () => {
-    try {
-      setQueries(await get<SavedQuery[]>("/saved-queries"));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Yüklenemedi");
-    }
-  };
-
-  useEffect(() => {
-    refresh();
-  }, []);
+  const [title, setTitle] = useState("");
+  const [matches, setMatches] = useState<AlertMatch[] | null>(null);
+  const [testing, setTesting] = useState(false);
+  const canEdit = can(role, "analyst");
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    setBusy(true);
     try {
-      await post("/saved-queries", { name, query_text: text, query_type: "fts", alert_enabled: true });
-      setName("");
-      setText("");
-      await refresh();
+      await Api.createSavedQuery({ ...form, name: form.name.trim(), query_text: form.query_text.trim() });
+      toast("Kural kaydedildi");
+      setForm({ ...form, name: "", query_text: "" });
+      list.reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Oluşturulamadı");
+      toast(errMsg(err), "error");
+    } finally {
+      setBusy(false);
     }
   };
 
-  const remove = async (id: string) => {
-    if (!confirm("Sorgu silinsin mi?")) return;
+  const remove = async (id: string, name: string) => {
+    if (!(await confirm({ title: `“${name}” silinsin mi?`, confirmLabel: "Sil", danger: true }))) return;
     try {
-      await del(`/saved-queries/${id}`);
-      await refresh();
+      await Api.deleteSavedQuery(id);
+      list.reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Silinemedi");
+      toast(errMsg(err), "error");
     }
   };
 
-  const runTest = async () => {
-    setError(null);
-    setTestResult(null);
+  const test = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTesting(true);
     try {
-      setTestResult(await post("/alerts/test", { text: testText }));
+      setMatches(await Api.testAlerts(text, title));
+      list.reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Test başarısız");
+      toast(errMsg(err), "error");
+    } finally {
+      setTesting(false);
     }
   };
+
+  const rows = list.data ?? [];
 
   return (
-    <section>
-      <h2 className="mb-4 text-lg font-semibold">Uyarılar ({queries.length})</h2>
-      {error && <p className="mb-3 text-sm text-red-400">Hata: {error}</p>}
+    <div>
+      <PageHeader
+        title="Uyarı kuralları"
+        lede="Kayıtlı sorgular yeni toplanan her öğeye karşı denenir. Uyarısı açık bir kural eşleşince bildirim işleyicileri (e-posta, Telegram, webhook) tetiklenir ve kuralın son tetiklenme zamanı güncellenir."
+      />
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <section className="min-w-0">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="font-semibold">Kurallar <span className="tnum text-osiris-faint">{rows.length}</span></h2>
+            <Segmented label="Süzgeç" value={only} onChange={setOnly} options={[{ value: "all", label: "Tümü" }, { value: "on", label: "Uyarısı açık" }]} />
+          </div>
+          {list.error && <Notice>{list.error}</Notice>}
+          {list.loading && !list.data ? <Loading /> : rows.length === 0 ? (
+            <Empty title="Kural yok">Aşağıdan ya da Arama sayfasındaki “Uyarı olarak kaydet” ile ekleyin.</Empty>
+          ) : (
+            <ul className="panel divide-y divide-osiris-line">
+              {rows.map((q) => (
+                <li key={q.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-medium">{q.name}</span>
+                      {q.alert_enabled ? <Pill tone="accent">uyarı açık</Pill> : <Pill>yalnızca kayıt</Pill>}
+                    </div>
+                    <div className="mt-0.5 truncate text-xs text-osiris-muted">
+                      <span className="text-osiris-faint">{QUERY_LABEL[q.query_type] ?? q.query_type}</span> · <span className="font-mono">{q.query_text}</span>
+                    </div>
+                  </div>
+                  <span className="text-xs text-osiris-faint">son tetiklenme {fmtAgo(q.last_triggered_at)}</span>
+                  <div className="flex gap-3 text-xs">
+                    <Link className="text-osiris-accent hover:underline" to={`/search?mode=${q.query_type === "semantic" ? "semantic" : "fts"}&q=${encodeURIComponent(q.query_text)}`}>Çalıştır</Link>
+                    {canEdit && <button className="text-osiris-bad/80 hover:text-osiris-bad" onClick={() => remove(q.id, q.name)}>Sil</button>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
 
-      {canWrite && (
-      <form onSubmit={create} className="mb-6 flex flex-col gap-2 rounded-lg border border-osiris-panel bg-osiris-panel/40 p-4 sm:flex-row">
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Kural adı *" required className={inputCls} />
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Anahtar kelime *" required className={inputCls} />
-        <button className="rounded-lg bg-osiris-accent/20 px-4 py-2 text-sm font-semibold text-osiris-accent">Ekle</button>
-      </form>
-      )}
+          {canEdit && (
+            <form onSubmit={create} className="panel mt-6 space-y-4 p-5">
+              <h2 className="font-semibold">Yeni kural</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Label label="Ad" required htmlFor="aq-name"><input id="aq-name" className="field" maxLength={200} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Kurum adı geçen sızıntılar" /></Label>
+                <Label label="Tür" htmlFor="aq-type">
+                  <select id="aq-type" className="field" value={form.query_type} onChange={(e) => setForm({ ...form, query_type: e.target.value })}>
+                    {QUERY_TYPES.map((t) => <option key={t} value={t}>{QUERY_LABEL[t]}</option>)}
+                  </select>
+                </Label>
+              </div>
+              <Label label="Sorgu" required hint="Eşleşme öğe başlığı ve temizlenmiş metninde alt metin olarak aranır (büyük/küçük harf duyarsız)." htmlFor="aq-text">
+                <input id="aq-text" className="field font-mono" maxLength={500} value={form.query_text} onChange={(e) => setForm({ ...form, query_text: e.target.value })} placeholder="ornekkurum.com.tr" />
+              </Label>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Toggle id="aq-alert" checked={form.alert_enabled} onChange={(v) => setForm({ ...form, alert_enabled: v })} label="Eşleşince uyarı gönder" />
+                <button className="btn-primary" disabled={busy || !form.name.trim() || !form.query_text.trim()}>Kuralı kaydet</button>
+              </div>
+            </form>
+          )}
+        </section>
 
-      <ul className="mb-8 space-y-2">
-        {queries.map((q) => (
-          <li key={q.id} className="flex items-center justify-between rounded-lg border border-osiris-panel bg-osiris-panel/40 px-4 py-2">
-            <div>
-              <span className="font-medium">{q.name}</span>
-              <span className="ml-3 text-sm text-slate-400">“{q.query_text}”</span>
-              {!q.alert_enabled && <span className="ml-2 text-xs text-slate-600">(kapalı)</span>}
-            </div>
-            {canWrite && (
-            <button onClick={() => remove(q.id)} className="rounded border border-osiris-panel px-2 py-1 text-xs text-red-400 hover:bg-red-400/10">
-              Sil
-            </button>
-            )}
-          </li>
-        ))}
-        {queries.length === 0 && <li className="text-sm text-slate-500">Kayıtlı sorgu yok.</li>}
-      </ul>
-
-      <h3 className="mb-2 text-base font-semibold">Metin Deneme</h3>
-      <p className="mb-2 text-xs text-slate-500">Bir metni kayıtlı kurallara karşı test edin (kayıt oluşmaz).</p>
-      <div className="flex gap-2">
-        <input value={testText} onChange={(e) => setTestText(e.target.value)} placeholder="Denenecek metin..." className={inputCls} />
-        <button onClick={runTest} disabled={!testText.trim()} className="rounded-lg bg-osiris-accent/20 px-4 py-2 text-sm font-semibold text-osiris-accent disabled:opacity-40">
-          Dene
-        </button>
+        <section className="min-w-0">
+          <h2 className="mb-3 font-semibold">Kuralları dene</h2>
+          {canEdit ? (
+            <form onSubmit={test} className="panel space-y-3 p-5">
+              <p className="text-sm text-osiris-muted">Bir metni uyarısı açık kurallara karşı deneyin. Öğe kaydedilmez; eşleşen kuralların son tetiklenme zamanı güncellenir.</p>
+              <Label label="Başlık" htmlFor="at-title"><input id="at-title" className="field" maxLength={2000} value={title} onChange={(e) => setTitle(e.target.value)} /></Label>
+              <Label label="Metin" required htmlFor="at-text">
+                <textarea id="at-text" className="field min-h-[9rem]" maxLength={50000} value={text} onChange={(e) => setText(e.target.value)} placeholder="Bir forum gönderisini ya da haber metnini yapıştırın" />
+              </Label>
+              <button className="btn-primary w-full" disabled={testing || !text.trim()}>{testing ? "Deneniyor" : "Dene"}</button>
+              {matches && (
+                <div className="border-t border-osiris-line pt-3">
+                  {matches.length === 0 ? <p className="text-sm text-osiris-muted">Hiçbir kural eşleşmedi.</p> : (
+                    <ul className="space-y-1.5">
+                      {matches.map((m, i) => (
+                        <li key={i} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="truncate"><span className="text-osiris-warn">●</span> {m.query_name}</span>
+                          <span className="truncate font-mono text-xs text-osiris-muted">“{m.matched}”</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </form>
+          ) : <Notice kind="info">Kuralları denemek için analist rolü gerekir.</Notice>}
+          <div className="mt-6 space-y-2 text-sm text-osiris-muted">
+            <p className="font-medium text-osiris-ink">Anomali tespiti</p>
+            <p>Kaynak başına öğe hacmi kayan z-skor tabanıyla izlenir (eşik 3.0, ısınma dönemi sonrası). Ani sıçramalar aynı bildirim kanalından gider; ayrı bir kural gerekmez.</p>
+          </div>
+        </section>
       </div>
-      {testResult !== null && (
-        <p className="mt-2 text-sm text-slate-400">
-          {testResult.length === 0
-            ? "Eşleşme yok."
-            : `Eşleşen: ${testResult.map((t) => `${t.query_name} (“${t.matched}”)`).join(", ")}`}
-        </p>
-      )}
-    </section>
+    </div>
   );
 }

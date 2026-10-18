@@ -2,6 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-osiris-bg text-slate-200 antialiased;
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-osiris-bg font-sans text-osiris-ink antialiased;
+    font-size: 15px;
+  }
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-osiris-accent;
+  }
+  ::selection {
+    @apply bg-osiris-accent/30;
+  }
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-md border border-osiris-line bg-osiris-sink px-3 py-2 text-sm text-osiris-ink placeholder-osiris-faint transition-colors focus:border-osiris-accent focus:outline-none disabled:opacity-50;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn bg-osiris-accent text-osiris-bg hover:bg-cyan-300;
+  }
+  .btn-ghost {
+    @apply btn border border-osiris-line text-osiris-muted hover:border-osiris-faint hover:text-osiris-ink;
+  }
+  .btn-danger {
+    @apply btn border border-osiris-bad/40 text-osiris-bad hover:bg-osiris-bad/10;
+  }
+  .panel {
+    @apply rounded-lg border border-osiris-line bg-osiris-panel;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

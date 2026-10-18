@@ -170,6 +170,12 @@ jobs:
       - name: Derle
         run: npm run build
         working-directory: osiris-web-ui
+      - name: Demo paketini derle (VITE_DEMO=1)
+        run: VITE_DEMO=1 npm run build:demo
+        working-directory: osiris-web-ui
+      - name: Demo kodu üretim paketine girmemeli
+        run: "! grep -l exampleleakforum dist/assets/*.js"
+        working-directory: osiris-web-ui
       - name: Güvenlik denetimi (npm audit)
         run: npm audit --omit=dev
         working-directory: osiris-web-ui

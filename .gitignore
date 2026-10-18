@@ -24,6 +24,7 @@ htmlcov/
 # Node / Web UI
 node_modules/
 osiris-web-ui/dist/
+osiris-web-ui/dist-demo/
 osiris-web-ui/.vite/
 *.tsbuildinfo
 
