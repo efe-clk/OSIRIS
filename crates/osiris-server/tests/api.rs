@@ -76,7 +76,7 @@ async fn saglik_ve_bilinmeyen_rotalar() {
     let (s, b) = call(&a, "GET", "/openapi.json", &[], None).await;
     assert_eq!(s, StatusCode::OK);
     assert!(b["paths"]["/sources/{source_id}/collect"]["post"].is_object(), "{b}");
-    assert_eq!(b["paths"].as_object().unwrap().len(), 28);
+    assert_eq!(b["paths"].as_object().unwrap().len(), 29);
     // Web arayüzü uçları belgede
     assert!(b["paths"]["/sources/{source_id}"]["patch"].is_object(), "{b}");
     assert!(b["paths"]["/sources/{source_id}"]["get"].is_object(), "{b}");
