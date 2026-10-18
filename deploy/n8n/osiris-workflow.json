@@ -1,5 +1,6 @@
 {
   "name": "OSIRIS — Yeni Veri Uyarısı",
+  "active": false,
   "nodes": [
     {
       "parameters": {
