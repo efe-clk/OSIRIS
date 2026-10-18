@@ -46,7 +46,7 @@ Tek imaj (`osiris:1.0.0-rc`) tüm rolleri çalıştırır; rol bir alt komuttur.
 | `crates/osiris-db`, `osiris-query` | PostgreSQL erişimi, migration'lar, denetim zinciri, saklama; tam metin / semantik / varlık araması |
 | `crates/osiris-graph`, `osiris-alert`, `osiris-report` | Varlık grafı (merkezilik, CNM topluluk), uyarı + anomali, Markdown/HTML/JSON/CSV/STIX raporları |
 | `crates/osiris-hash`, `osiris-extract`, `osiris-security`, `osiris-feed`, `osiris-types` | `content_hash`, kanonik JSON, varlık desenleri, SSRF denetimi + temizleyiciler, RSS/Atom ayrıştırma, ortak türler |
-| `osiris-web-ui` | Tarayıcı arayüzü (panel, arama, kaynaklar, graf, uyarılar, raporlar) |
+| `osiris-web-ui` | Tarayıcı arayüzü — tüm API özellikleri: kullanıcı adı tarama, toplama, arama, graf, kaynaklar, uyarılar, raporlar, yönetim ([README](osiris-web-ui/README.md)) |
 | `db/migrations` | SQL şeması (tekrar çalıştırılabilir; ikiliye gömülü) |
 | `plugins/` | Plugin manifest'leri ve username-search site veritabanları (derleme zamanında gömülür) |
 

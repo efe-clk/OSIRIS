@@ -73,12 +73,12 @@ Roles ascend: `viewer` → `analyst` → `admin`. Unknown roles are denied.
 | `POST /auth/token` | operator key (body) | — | — |
 | `GET/POST /auth/keys`, `DELETE /auth/keys/{id}` | ✗ | ✗ | ✓ |
 | `GET /plugins`, `GET /stats` | ✓ | ✓ | ✓ |
-| `POST /search`, `/search/entity`, `GET /items/*`, `/entities/top` | ✓ | ✓ | ✓ |
-| `GET /sources`, `/saved-queries`, `/graph` | ✓ | ✓ | ✓ |
+| `POST /search`, `/search/semantic`, `/search/entity`, `GET /items/*`, `/entities/top` | ✓ | ✓ | ✓ |
+| `GET /sources`, `/sources/{id}`, `/saved-queries`, `/graph`, `/graph/analysis`, `/graph/export` | ✓ | ✓ | ✓ |
 | `POST /collect`, `/collect/batch` | ✗ (403) | ✓ | ✓ |
-| `POST /sources`, `DELETE /sources/*`, `/sources/*/collect` | ✗ | ✓ | ✓ |
+| `POST /sources`, `PATCH /sources/*`, `DELETE /sources/*`, `/sources/*/collect` | ✗ | ✓ | ✓ |
 | `POST /saved-queries`, `DELETE`, `/alerts/test` | ✗ | ✓ | ✓ |
-| `POST /graph/relation`, `/reports/markdown` | ✗ | ✓ | ✓ |
+| `POST /graph/relation`, `/reports/markdown`, `/reports/generate` | ✗ | ✓ | ✓ |
 | `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run` | ✗ | ✗ | ✓ |
 
 ## 3. Conventions
@@ -119,6 +119,12 @@ curl -X POST https://<host>:8443/api/collect -H "X-API-Key: <k>" \
   -d '{"plugin_id":"rss","config":{"feed_url":"https://example.com/rss"}}'
 # → {"items":3,"metadata":{...}}  (502 with plugin error message on failure)
 
+# With previews: include_items → "results" (up to 1000 items; snippet ≤ 500 chars). The web UI
+# (username scan, collect) uses this. For /sources/<id>/collect pass ?include_items=true.
+curl -X POST https://<host>:8443/api/collect -H "X-API-Key: <k>" -H 'Content-Type: application/json' \
+  -d '{"plugin_id":"username-search","config":{"username":"example"},"include_items":true}'
+# → {"items":2,"metadata":{...},"results":[{"url":"...","title":"...","snippet":"...","published_at":null,"metadata":{...},"tags":[...]}]}
+
 # Batch (≤10 jobs, sequential, per-job results)
 curl -X POST https://<host>:8443/api/collect/batch -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' \
@@ -138,6 +144,16 @@ curl -X POST https://<host>:8443/api/search/entity -H "X-API-Key: <k>" \
 ```
 
 Entity types: `person, org, location, ip, domain, email, phone, crypto_address, hash, username, cve, custom`.
+
+### Semantic search
+
+```bash
+curl -X POST https://<host>:8443/api/search/semantic -H "X-API-Key: <k>" \
+  -H 'Content-Type: application/json' -d '{"query":"ransomware attack","limit":20}'
+# → [{"id":"...","title":"...","url":"...","cleaned_content":"...","collected_at":"...","similarity":0.83}]
+```
+
+The API computes the query vector (same model as the worker, SOZLESME §10). Without `OSIRIS_EMBEDDING_MODEL` or the downloaded models (`docker compose --profile models run --rm osiris-models`) it returns `503`; the rest of the API is unaffected. The model loads on the first search. Only items with `embedding_v2` are searched.
 
 ## 8. Sources
 
@@ -159,6 +175,14 @@ curl -X POST https://<host>:8443/api/sources/<id>/collect -H "X-API-Key: <k>"
 
 # Delete
 curl -X DELETE https://<host>:8443/api/sources/<id> -H "X-API-Key: <k>"
+# Detail (includes plugin config; keys containing api_key/token/password/secret come back as "********")
+curl -H "X-API-Key: <k>" https://<host>:8443/api/sources/<id>
+
+# Update — only the given fields change: enabled, schedule, priority, name, url, tags,
+# retention_days, config. config merges shallowly: null removes a key, "********" keeps the stored secret.
+curl -X PATCH https://<host>:8443/api/sources/<id> -H "X-API-Key: <k>" \
+  -H 'Content-Type: application/json' -d '{"enabled":false,"schedule":"0 */6 * * *"}'
+# → {"status":"updated"}   (empty body 422, unknown source 404, config > 20 KB 413)
 ```
 
 Source rows carry health: `last_crawled_at`, `last_success_at`, `failure_count`, `avg_response_ms`.
@@ -204,6 +228,12 @@ curl -X POST https://<host>:8443/api/graph/relation -H "X-API-Key: <k>" \
   -H 'Content-Type: application/json' \
   -d '{"source":"example.com","target":"1.2.3.4","relation_type":"resolves"}'
 # persisted to graph_edges (survives restarts)
+# Analysis: degree centrality (top N, 1-200), CNM communities (largest 50; up to 5000 nodes),
+# neighbours when node is given
+curl -H "X-API-Key: <k>" "https://<host>:8443/api/graph/analysis?top=10&node=example.com"
+
+# Export (Gephi etc.): format ∈ graphml|gexf → XML body
+curl -H "X-API-Key: <k>" "https://<host>:8443/api/graph/export?format=gexf" -o osiris.gexf
 ```
 
 ## 11. Alerts
@@ -228,6 +258,12 @@ curl -X POST https://<host>:8443/api/reports/markdown -H "X-API-Key: <k>" \
   -d '{"title":"R","scope":"S","summary":"O",
        "findings":[{"title":"B","description":"D"}],"sources":["k"]}'
 # → {"markdown":"# R\n..."}
+# Multi-format: format ∈ markdown|html|json|stix. STIX/JSON indicators go in `entities`
+# (STIX only takes ip, domain, email, crypto_address, hash, cve). Never written to disk.
+curl -X POST https://<host>:8443/api/reports/generate -H "X-API-Key: <k>" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Case 12","format":"stix","entities":[{"type":"ip","value":"203.0.113.7"}]}'
+# → {"format":"stix","media_type":"application/stix+json","filename":"Case-12.stix.json","content":"{...}"}
 ```
 
 ## 13. Stats
@@ -267,6 +303,7 @@ Front large batch jobs with `/collect/batch` (≤10) and client-side pacing.
 
 ## 16. Changelog
 
+- **Web UI** — `POST /search/semantic`, `GET`/`PATCH /sources/{id}` (secrets masked, config merge), `GET /graph/analysis`, `GET /graph/export`, `POST /reports/generate` (Markdown/HTML/JSON/STIX); `include_items` preview for `/collect` and `/sources/{id}/collect`; `PATCH` in CORS. E11 updated: functions already in the libraries are now exposed as endpoints.
 - **1.0.0-rc (Rust R7)** — Python implementation removed; same contract. `osiris-server migrate` applies the embedded migrations (006 drops the legacy `items.embedding` column; audit chain is v2-only).
 - **Rust R6** — API reimplemented in Rust (axum) with an unchanged contract; per-identity quota (`429`); `/metrics` (separate listener); structured JSON logs (`OSIRIS_LOG_FORMAT=json`); `/openapi.json`; timestamps keep the FastAPI format (`…Z`). `/graph/relation` with an id that is blank after trimming now returns `400` instead of `500`.
 - **Unreleased (Rust R2)** — KVKK: `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run`, `retention_days` on sources; refuses to start without `OSIRIS_API_KEY`; JWT secret has no API-key fallback (`/auth/token` → 503); audit chain v2 (RFC 8785).

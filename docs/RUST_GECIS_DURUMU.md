@@ -481,5 +481,28 @@ Start" adımları birebir (`.env` → `make-certs.sh` → `--profile models run 
 7. Modeller daha önce `python models/download.py` ile indirildiyse aynı dosyalar geçerlidir;
    değilse `docker compose --profile models run --rm osiris-models`.
 
+## Geçiş sonrası: web arayüzü (2026-10-18)
+
+**Karar (E11 güncellendi, kullanıcı isteği):** web arayüzünde tüm özelliklerin kullanılabilmesi için
+kütüphanede hazır olan işlevler uç olarak açıldı: `POST /search/semantic`, `GET /graph/analysis`
+(merkezilik, CNM toplulukları ≤ 5000 düğüm, komşular), `GET /graph/export` (GraphML/GEXF),
+`POST /reports/generate` (Markdown/HTML/JSON/STIX). Ayrıca `GET`/`PATCH /sources/{id}` (sırlar
+`********`, config sığ birleştirme) ve `/collect` + `/sources/{id}/collect` için `include_items`
+önizlemesi. OpenAPI 24 → 28 yol; CORS'a `PATCH` eklendi. Mevcut 26 ucun sözleşmesi değişmedi.
+
+- **Semantik arama:** sorgu vektörünü API üretir (`osiris_pipeline::embed`, ilk aramada yüklenir).
+  compose'da `osiris-api` artık `./models`'i salt okunur bağlar ve `OSIRIS_EMBEDDING_MODEL` alır;
+  bellek tavanı 512m → 1g. Model yoksa uç `503`, API'nin geri kalanı etkilenmez.
+- **Dağıtım:** Nginx CSP'si arayüz için `img-src data: blob:` ve `style-src 'unsafe-inline'`
+  (React `style` öznitelikleri) aldı; `script-src 'self'` kaldı. `/` → `/ui/` yönlendirmesi.
+  UI imajı kendi nginx yapılandırmasıyla (özetli varlıklar 1 yıl önbellek, `index.html` no-cache,
+  proxy arkasında gzip) ve sağlık denetimiyle; nginx sürümü sabit (1.31-alpine).
+- **Testler:** Rust birim testlerine 3 yeni test (doğrulama sırası, RBAC, graf, rapor); sözleşme
+  paketi 144 → 182, gerçek PostgreSQL + Redis'e karşı Rust API'de 182/182. Arayüz gerçek API'ye
+  karşı tarayıcıda uçtan uca, hem doğrudan hem dış nginx → UI nginx zinciri üzerinden denendi.
+- **Not:** `/api/docs` (Swagger UI) betiklerini jsDelivr'dan yükler; Nginx CSP'si
+  (`default-src 'self'`) bunu Nginx üzerinden engeller. Doğrudan API portunda (`127.0.0.1:8001/docs`)
+  çalışır; `/api/openapi.json` her iki yoldan erişilebilir.
+
 **Rust geçişi tamamlandı.** Sonraki işler (geçiş dışı): uyarıların işçide yayımlanması, 2FA,
 sır kasası, PDF rapor, WASM plugin'leri, :443 geçişi.

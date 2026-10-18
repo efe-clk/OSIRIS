@@ -266,7 +266,7 @@ Functions without an endpoint are deliberately library-level (decision E11); add
 
 - **CLI:** `osiris status|plugins|collect` — exit codes 0 (ok), 1 (unknown plugin / collection failed), 2 (bad input). In the container: `docker compose exec osiris-api osiris …`.
 - **REST API:** [API.md](API.md); interactive docs at `/api/docs`, OpenAPI at `/api/openapi.json`.
-- **Web UI:** dashboard, sources, search, graph, alerts, reports (`/ui/`).
+- **Web UI** (`/ui/`; the root `/` redirects there): dashboard, username scan (Maigret-style, 2500+ sites), collect (plugin forms generated from manifest schemas, batch jobs, save as source), search (full-text / semantic / entity), items, entities, relationship graph (centrality, communities, GraphML/GEXF), sources (create, edit, toggle, run), alert rules, reports (Markdown/HTML/JSON/STIX 2.1), access & privacy (keys, JWT, KVKK erasure). Role-aware menu; details in [osiris-web-ui/README.md](../osiris-web-ui/README.md).
 - **n8n:** `deploy/n8n/osiris-workflow.json` — Schedule (15 min) → Settings (`feed_url`, `query`) → OSIRIS Collect → OSIRIS Search; `X-API-Key` comes from the n8n service's `OSIRIS_API_KEY`. Edit the **Ayarlar** (settings) node after importing.
 
 ---

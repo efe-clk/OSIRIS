@@ -46,7 +46,7 @@ One image (`osiris:1.0.0-rc`) runs every role; the role is a subcommand. See [do
 | `crates/osiris-db`, `osiris-query` | PostgreSQL access, migrations, audit chain, retention; full-text / semantic / entity search |
 | `crates/osiris-graph`, `osiris-alert`, `osiris-report` | Entity graph (centrality, CNM communities), alerts + anomalies, Markdown/HTML/JSON/CSV/STIX reports |
 | `crates/osiris-hash`, `osiris-extract`, `osiris-security`, `osiris-feed`, `osiris-types` | `content_hash`, canonical JSON, entity regexes, SSRF guard + sanitizers, RSS/Atom parsing, shared types |
-| `osiris-web-ui` | Browser interface (dashboard, search, sources, graph, alerts, reports) |
+| `osiris-web-ui` | Browser interface — every API feature: username scan, collect, search, graph, sources, alerts, reports, admin ([README](osiris-web-ui/README.md)) |
 | `db/migrations` | SQL schema (idempotent; embedded in the binary) |
 | `plugins/` | Plugin manifests and the username-search site databases (embedded at build time) |
 

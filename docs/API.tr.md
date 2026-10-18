@@ -73,12 +73,12 @@ Roller yükselir: `viewer` → `analyst` → `admin`. Bilinmeyen rol reddedilir.
 | `POST /auth/token` | gövdede operatör anahtarı | — | — |
 | `GET/POST /auth/keys`, `DELETE /auth/keys/{id}` | ✗ | ✗ | ✓ |
 | `GET /plugins`, `GET /stats` | ✓ | ✓ | ✓ |
-| `POST /search`, `/search/entity`, `GET /items/*`, `/entities/top` | ✓ | ✓ | ✓ |
-| `GET /sources`, `/saved-queries`, `/graph` | ✓ | ✓ | ✓ |
+| `POST /search`, `/search/semantic`, `/search/entity`, `GET /items/*`, `/entities/top` | ✓ | ✓ | ✓ |
+| `GET /sources`, `/sources/{id}`, `/saved-queries`, `/graph`, `/graph/analysis`, `/graph/export` | ✓ | ✓ | ✓ |
 | `POST /collect`, `/collect/batch` | ✗ (403) | ✓ | ✓ |
-| `POST /sources`, `DELETE /sources/*`, `/sources/*/collect` | ✗ | ✓ | ✓ |
+| `POST /sources`, `PATCH /sources/*`, `DELETE /sources/*`, `/sources/*/collect` | ✗ | ✓ | ✓ |
 | `POST /saved-queries`, `DELETE`, `/alerts/test` | ✗ | ✓ | ✓ |
-| `POST /graph/relation`, `/reports/markdown` | ✗ | ✓ | ✓ |
+| `POST /graph/relation`, `/reports/markdown`, `/reports/generate` | ✗ | ✓ | ✓ |
 | `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run` | ✗ | ✗ | ✓ |
 
 ## 3. Uzlaşımlar
@@ -119,6 +119,12 @@ curl -X POST https://<sunucu>:8443/api/collect -H "X-API-Key: <a>" \
   -d '{"plugin_id":"rss","config":{"feed_url":"https://example.com/rss"}}'
 # → {"items":3,"metadata":{...}}  (başarısızlıkta plugin mesajıyla 502)
 
+# Önizlemeli: include_items → "results" (en çok 1000 öğe; snippet ≤ 500 karakter). Web arayüzü
+# (kullanıcı adı tarama, toplama) bunu kullanır. /sources/<id>/collect için ?include_items=true.
+curl -X POST https://<sunucu>:8443/api/collect -H "X-API-Key: <a>" -H 'Content-Type: application/json' \
+  -d '{"plugin_id":"username-search","config":{"username":"ornek"},"include_items":true}'
+# → {"items":2,"metadata":{...},"results":[{"url":"...","title":"...","snippet":"...","published_at":null,"metadata":{...},"tags":[...]}]}
+
 # Toplu (≤10 iş, sıralı, iş başına sonuç)
 curl -X POST https://<sunucu>:8443/api/collect/batch -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' \
@@ -138,6 +144,16 @@ curl -X POST https://<sunucu>:8443/api/search/entity -H "X-API-Key: <a>" \
 ```
 
 Varlık türleri: `person, org, location, ip, domain, email, phone, crypto_address, hash, username, cve, custom`.
+
+### Semantik arama
+
+```bash
+curl -X POST https://<sunucu>:8443/api/search/semantic -H "X-API-Key: <a>" \
+  -H 'Content-Type: application/json' -d '{"query":"fidye yazılımı saldırısı","limit":20}'
+# → [{"id":"...","title":"...","url":"...","cleaned_content":"...","collected_at":"...","similarity":0.83}]
+```
+
+Sorgu vektörünü API üretir (işçiyle aynı model, SOZLESME §10). `OSIRIS_EMBEDDING_MODEL` tanımlı değilse ya da modeller indirilmemişse (`docker compose --profile models run --rm osiris-models`) `503` döner; API'nin geri kalanı etkilenmez. Model ilk aramada yüklenir. Yalnızca `embedding_v2` dolu öğeler aranır.
 
 ## 8. Kaynaklar
 
@@ -159,6 +175,14 @@ curl -X POST https://<sunucu>:8443/api/sources/<id>/collect -H "X-API-Key: <a>"
 
 # Sil
 curl -X DELETE https://<sunucu>:8443/api/sources/<id> -H "X-API-Key: <a>"
+# Detay (plugin config'i dahil; api_key/token/password/secret içeren alanlar "********")
+curl -H "X-API-Key: <a>" https://<sunucu>:8443/api/sources/<id>
+
+# Güncelle — yalnızca verilen alanlar değişir: enabled, schedule, priority, name, url, tags,
+# retention_days, config. config sığ birleşir: null → anahtar silinir, "********" → eski sır korunur.
+curl -X PATCH https://<sunucu>:8443/api/sources/<id> -H "X-API-Key: <a>" \
+  -H 'Content-Type: application/json' -d '{"enabled":false,"schedule":"0 */6 * * *"}'
+# → {"status":"updated"}   (boş gövde 422, bilinmeyen kaynak 404, config > 20 KB 413)
 ```
 
 Kaynak satırları sağlık taşır: `last_crawled_at`, `last_success_at`, `failure_count`, `avg_response_ms`.
@@ -204,6 +228,14 @@ curl -X POST https://<sunucu>:8443/api/graph/relation -H "X-API-Key: <a>" \
   -H 'Content-Type: application/json' \
   -d '{"source":"example.com","target":"1.2.3.4","relation_type":"resolves"}'
 # graph_edges'e yazılır (yeniden başlatmada korunur)
+# Analiz: derece merkeziliği (ilk top, 1-200), CNM toplulukları (en büyük 50; ≤ 5000 düğümde),
+# node verilirse komşular
+curl -H "X-API-Key: <a>" "https://<sunucu>:8443/api/graph/analysis?top=10&node=example.com"
+# → {"nodes":42,"edges":57,"centrality":[{"id":"example.com","score":0.12,"degree":5}],
+#    "communities":[{"size":9,"members":[...]}],"neighbors":["1.2.3.4",...]}
+
+# Dışa aktarım (Gephi vb.): format ∈ graphml|gexf → XML gövde
+curl -H "X-API-Key: <a>" "https://<sunucu>:8443/api/graph/export?format=gexf" -o osiris.gexf
 ```
 
 ## 11. Uyarılar
@@ -228,6 +260,12 @@ curl -X POST https://<sunucu>:8443/api/reports/markdown -H "X-API-Key: <a>" \
   -d '{"title":"R","scope":"S","summary":"O",
        "findings":[{"title":"B","description":"D"}],"sources":["k"]}'
 # → {"markdown":"# R\n..."}
+# Çok biçimli: format ∈ markdown|html|json|stix. STIX/JSON göstergeleri `entities` ile verilir
+# (STIX'e yalnızca ip, domain, email, crypto_address, hash, cve girer). Diske yazılmaz.
+curl -X POST https://<sunucu>:8443/api/reports/generate -H "X-API-Key: <a>" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Vaka 12","format":"stix","entities":[{"type":"ip","value":"203.0.113.7"}]}'
+# → {"format":"stix","media_type":"application/stix+json","filename":"Vaka-12.stix.json","content":"{...}"}
 ```
 
 ## 13. İstatistik
@@ -267,6 +305,7 @@ Büyük toplu işlerde `/collect/batch` (≤10) kullanın ve istemcide tempo koy
 
 ## 16. Değişiklikler
 
+- **Web arayüzü** — `POST /search/semantic`, `GET`/`PATCH /sources/{id}` (sırlar maskeli, config birleştirme), `GET /graph/analysis`, `GET /graph/export`, `POST /reports/generate` (Markdown/HTML/JSON/STIX); `/collect` ve `/sources/{id}/collect` için `include_items` önizlemesi; CORS'ta `PATCH`. E11 güncellendi: kütüphanede hazır olan işlevler uç olarak açıldı.
 - **1.0.0-rc (Rust R7)** — Python uygulaması kaldırıldı; sözleşme aynı. `osiris-server migrate` gömülü migration'ları uygular (006 eski `items.embedding` sütununu siler; denetim zinciri yalnızca v2).
 - **Rust R6** — API Rust'ta (axum) yeniden yazıldı, sözleşme değişmedi; kimlik başına kota (`429`); `/metrics` (ayrı dinleyici); yapılandırılmış JSON log (`OSIRIS_LOG_FORMAT=json`); `/openapi.json`; zaman damgaları FastAPI biçiminde (`…Z`). `/graph/relation`'da kırpınca boş kalan kimlik artık `500` yerine `400` döner.
 - **Yayımlanmadı (Rust R2)** — KVKK: `DELETE /items/{id}`, `POST /entities/erase`, `POST /admin/retention/run`, kaynaklarda `retention_days`; `OSIRIS_API_KEY` olmadan başlamaz; JWT sırrı API anahtarına düşmez (`/auth/token` → 503); audit zinciri v2 (RFC 8785).

@@ -266,7 +266,7 @@ API'de olmayan fonksiyonlar bilinçli olarak kütüphane düzeyindedir (E11 kara
 
 - **CLI:** `osiris status|plugins|collect` — çıkış kodları 0 (tamam), 1 (plugin yok / toplama başarısız), 2 (hatalı girdi). Konteynerde: `docker compose exec osiris-api osiris …`.
 - **REST API:** [API.tr.md](API.tr.md); etkileşimli doküman `/api/docs`, OpenAPI `/api/openapi.json`.
-- **Web UI:** panel, kaynaklar, arama, graf, uyarılar, raporlar (`/ui/`).
+- **Web UI** (`/ui/`, kök adres `/` buraya yönlenir): panel, kullanıcı adı tarama (Maigret tarzı, 2500+ site), toplama (manifest şemasından üretilen plugin formları, toplu iş, kaynak olarak kaydet), arama (tam metin / semantik / varlık), öğeler, varlıklar, ilişki grafı (merkezilik, topluluklar, GraphML/GEXF), kaynaklar (oluştur, düzenle, aç/kapat, çalıştır), uyarı kuralları, raporlar (Markdown/HTML/JSON/STIX 2.1), erişim ve gizlilik (anahtarlar, JWT, KVKK silme). Rol bazlı menü; ayrıntı [osiris-web-ui/README.md](../osiris-web-ui/README.md).
 - **n8n:** `deploy/n8n/osiris-workflow.json` — Zamanlayıcı (15 dk) → Ayarlar (`feed_url`, `query`) → OSIRIS Topla → OSIRIS Arama; `X-API-Key` n8n servisinin `OSIRIS_API_KEY` değişkeninden. İçe aktardıktan sonra **Ayarlar** düğümünü düzenleyin.
 
 ---
