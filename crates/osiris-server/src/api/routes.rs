@@ -27,6 +27,7 @@ pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/health", get(health))
         .route("/auth/token", post(issue_token))
+        .route("/auth/me", get(whoami))
         .route("/auth/keys", post(create_api_key).get(list_api_keys))
         .route("/auth/keys/{key_id}", delete(revoke_api_key))
         .route("/plugins", get(list_plugins))
@@ -152,6 +153,14 @@ pub async fn issue_token(State(st): State<Shared>, Body(body): Body) -> ApiResul
         .map_err(|e| ApiError::internal("Jeton üretilemedi", e))?;
     st.audit("operator", "auth.token", None, json!({"role": req.role})).await;
     Ok(ok(token))
+}
+
+/// Çağıranın kimliği ve rolü (arayüz rol tespiti; yan etkisiz). Herhangi bir geçerli kimlik.
+#[utoipa::path(get, path = "/auth/me", tag = "Auth",
+    responses((status = 200, description = "{\"user\": …, \"role\": viewer|analyst|admin}"), (status = 401)))]
+pub async fn whoami(State(st): State<Shared>, headers: HeaderMap) -> ApiResult<Response> {
+    let ident = st.require(&headers, "viewer").await?;
+    Ok(ok(json!({"user": ident.user, "role": ident.role})))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -790,6 +799,7 @@ impl Validate for SourceRequest {
         v.len("url", &self.url, 0, 2048);
         v.len("network_type", &self.network_type, 0, 32);
         v.len("schedule", &self.schedule, 0, 100);
+        v.cron("schedule", &self.schedule);
         v.range("priority", self.priority.0, 1, 10);
         v.items("tags", self.tags.len(), 0, 20);
         v.items("config", self.config.len(), 0, 50);
@@ -1291,18 +1301,75 @@ where
     Option::<T>::deserialize(d).map(Some)
 }
 
-/// Kaynak config'inde sır taşıyan anahtarlar: GET'te maskelenir, PATCH'te maske eski değeri korur.
+/// Kaynak config'inde sır taşıyan anahtar adları (her derinlikte; ör. rest-api `headers`
+/// içindeki `Authorization`, `params` içindeki `api_key`): GET'te maskelenir, PATCH'te maske
+/// eski değeri korur.
 static SECRET_KEY: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?i)(api_key|access_token|token|password|secret)").expect("secret")
+    regex::Regex::new(
+        r"(?i)(api[_-]?key|access[_-]?token|token|password|passwd|secret|authorization|cookie|credential|private[_-]?key)",
+    )
+    .expect("secret")
 });
 pub const SECRET_MASK: &str = "********";
+/// İç içe nesne/dizi derinlik tavanı (config ≤ 20 KB; yığın taşmasına karşı).
+const SECRET_DEPTH: usize = 8;
 
+fn is_secret(key: &str, v: &Value) -> bool {
+    let empty = v.is_null() || v.as_str() == Some("");
+    SECRET_KEY.is_match(key) && !empty && !v.is_object() && !v.is_array()
+}
+
+/// Sır anahtarlarının değerlerini her derinlikte `********` yapar.
 fn mask_secrets(config: &mut Map<String, Value>) {
-    for (k, v) in config.iter_mut() {
-        let empty = v.is_null() || v.as_str() == Some("");
-        if SECRET_KEY.is_match(k) && !empty {
-            *v = Value::String(SECRET_MASK.into());
+    fn walk(v: &mut Value, depth: usize) {
+        if depth > SECRET_DEPTH {
+            return;
         }
+        match v {
+            Value::Object(m) => {
+                for (k, val) in m.iter_mut() {
+                    if is_secret(k, val) {
+                        *val = Value::String(SECRET_MASK.into());
+                    } else {
+                        walk(val, depth + 1);
+                    }
+                }
+            }
+            Value::Array(a) => a.iter_mut().for_each(|x| walk(x, depth + 1)),
+            _ => {}
+        }
+    }
+    for (k, v) in config.iter_mut() {
+        if is_secret(k, v) {
+            *v = Value::String(SECRET_MASK.into());
+        } else {
+            walk(v, 1);
+        }
+    }
+}
+
+/// PATCH: gönderilen değerde `********` olan yerler saklı eski değerle değiştirilir (her
+/// derinlikte); eskisi yoksa o anahtar yazılmaz.
+fn restore_masked(new: &Value, old: Option<&Value>, depth: usize) -> Option<Value> {
+    if new.as_str() == Some(SECRET_MASK) {
+        return old.cloned();
+    }
+    match (new, old) {
+        (Value::Object(n), Some(Value::Object(o))) if depth <= SECRET_DEPTH => {
+            let mut out = Map::new();
+            for (k, v) in n {
+                if let Some(r) = restore_masked(v, o.get(k), depth + 1) {
+                    out.insert(k.clone(), r);
+                }
+            }
+            Some(Value::Object(out))
+        }
+        (Value::Object(n), _) if depth <= SECRET_DEPTH => Some(Value::Object(
+            n.iter()
+                .filter_map(|(k, v)| restore_masked(v, None, depth + 1).map(|r| (k.clone(), r)))
+                .collect(),
+        )),
+        _ => Some(new.clone()),
     }
 }
 
@@ -1388,6 +1455,7 @@ impl Validate for SourceUpdateRequest {
         }
         if let Some(Some(s)) = &self.schedule {
             v.len("schedule", s, 0, 100);
+            v.cron("schedule", s);
         }
         if let Some(Some(p)) = self.priority {
             v.range("priority", p.0, 1, 10);
@@ -1501,8 +1569,8 @@ pub async fn update_source(
             for (k, v) in c.iter().flatten() {
                 if v.is_null() {
                     cfg.remove(k);
-                } else if v.as_str() != Some(SECRET_MASK) {
-                    cfg.insert(chars(k, 100), v.clone());
+                } else if let Some(val) = restore_masked(v, cfg.get(k), 1) {
+                    cfg.insert(chars(k, 100), val);
                 }
             }
             meta["config"] = Value::Object(cfg);
@@ -1818,4 +1886,42 @@ pub async fn report_generate(
     };
     let filename = format!("{}.{ext}", report_stem(&req.title));
     Ok(ok(json!({"format": fmt, "media_type": media, "filename": filename, "content": content})))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sirlar_her_derinlikte_maskelenir() {
+        let mut cfg = json!({
+            "endpoint": "https://api.example.com",
+            "api_key": "k1",
+            "token": "",
+            "headers": {"Authorization": "Bearer t", "X-Api-Key": "k2", "Accept": "json"},
+            "params": {"api_key": "k3", "q": "x"},
+            "list": [{"password": "p"}],
+        });
+        mask_secrets(cfg.as_object_mut().unwrap());
+        assert_eq!(cfg["api_key"], SECRET_MASK);
+        assert_eq!(cfg["token"], ""); // boş değer maskelenmez (ayarlanmamış görünsün)
+        assert_eq!(cfg["headers"]["Authorization"], SECRET_MASK);
+        assert_eq!(cfg["headers"]["X-Api-Key"], SECRET_MASK);
+        assert_eq!(cfg["headers"]["Accept"], "json");
+        assert_eq!(cfg["params"]["api_key"], SECRET_MASK);
+        assert_eq!(cfg["params"]["q"], "x");
+        assert_eq!(cfg["list"][0]["password"], SECRET_MASK);
+        assert_eq!(cfg["endpoint"], "https://api.example.com");
+    }
+
+    #[test]
+    fn maske_patchte_eski_degeri_korur() {
+        let old = json!({"Authorization": "Bearer gercek", "X-Api-Key": "eski", "Accept": "json"});
+        let new =
+            json!({"Authorization": SECRET_MASK, "X-Api-Key": "yeni", "X-Diger": SECRET_MASK});
+        let got = restore_masked(&new, Some(&old), 1).unwrap();
+        assert_eq!(got, json!({"Authorization": "Bearer gercek", "X-Api-Key": "yeni"}));
+        assert_eq!(restore_masked(&json!(SECRET_MASK), None, 1), None);
+        assert_eq!(restore_masked(&json!(SECRET_MASK), Some(&json!("s")), 1), Some(json!("s")));
+    }
 }

@@ -39,7 +39,7 @@ impl Modify for Security {
                        analyst → admin. Ayrıntılı başvuru: docs/API.md"
     ),
     paths(
-        health, issue_token, create_api_key, list_api_keys, revoke_api_key, list_plugins, stats,
+        health, issue_token, whoami, create_api_key, list_api_keys, revoke_api_key, list_plugins, stats,
         recent_items, item_detail, top_entities, collect_batch, collect, search, entity_search,
         graph, graph_add, list_sources, create_source, delete_source, collect_source,
         list_saved_queries, create_saved_query, delete_saved_query, test_alerts, report_markdown,

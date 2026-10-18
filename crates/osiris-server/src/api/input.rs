@@ -97,6 +97,15 @@ impl Violations {
         }
     }
 
+    /// Boş değilse 5 alanlı cron (collector'ın kabul ettiği biçim; aksi hâlde kaynak hiç çalışmaz).
+    pub fn cron(&mut self, field: &str, value: &str) {
+        if !value.trim().is_empty()
+            && let Err(e) = osiris_collector::parse_cron(value)
+        {
+            self.push(field, "cron", e);
+        }
+    }
+
     pub fn pattern(&mut self, field: &str, value: &str, re: &regex::Regex) {
         if !re.is_match(value) {
             self.push(

@@ -8,9 +8,11 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      // Üretimdeki Nginx gibi /api önekini sıyırır (/api/plugins → /plugins); API rotaları öneksiz.
       "/api": {
-        target: "http://localhost:8001",
+        target: "http://127.0.0.1:8001",
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },
   },
