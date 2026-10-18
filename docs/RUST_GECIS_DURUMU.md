@@ -2,6 +2,14 @@
 
 Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Envanter: [RUST_GECIS_ENVANTER.md](RUST_GECIS_ENVANTER.md) · Sözleşme: [SOZLESME.md](SOZLESME.md)
 
+> **Tarihsel kayıt.** Bu belge, plan ve envanter Python → Rust geçişinin (R0–R7, 2026-10-16/18)
+> aşama aşama kaydıdır ve yazıldıkları anı yansıtır; artık var olmayan Python dosyalarına ve
+> komutlarına başvurabilirler. Sistemin **bugünkü** hâli için:
+> [TEKNIK_DOKUMAN.tr.md](TEKNIK_DOKUMAN.tr.md) (kurulum ve işletim), [ARCHITECTURE.tr.md](ARCHITECTURE.tr.md),
+> [API.tr.md](API.tr.md), [PLUGINS.tr.md](PLUGINS.tr.md). Geçişten sonra eklenen web arayüzü uçları
+> (`/auth/me`, semantik arama, kaynak detayı/güncelleme, graf analizi/dışa aktarım, çok biçimli
+> rapor) API belgesinin değişiklik geçmişindedir.
+
 | Faz | Durum | Dal |
 |---|---|---|
 | R0 — Envanter | ✅ Tamamlandı, kararlar onaylandı | `master` |

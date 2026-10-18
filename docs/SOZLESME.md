@@ -1,323 +1,322 @@
-# OSIRIS — Diller Arası Geçiş Sözleşmesi
+# OSIRIS — Davranış Sözleşmesi
 
-> Sürüm 1.0.0-rc (Rust geçişi R7 sonrası) · Plan: [RUST_GECIS_PLANI.md](RUST_GECIS_PLANI.md) · Durum: [RUST_GECIS_DURUMU.md](RUST_GECIS_DURUMU.md)
->
-> Bu belge OSIRIS'in diller ve sürümler arası **sabit kalması gereken** davranışını tanımlar.
-> Bağlayıcı olan metin değil **veridir**:
->
-> | Ne | Nerede | Doğrulama |
-> |---|---|---|
-> | Altın veriler | `fixtures/` (dilden bağımsız JSON) | `cargo test --workspace` (crate'lerin `tests/fixtures.rs` dosyaları) |
-> | Yapısal sözleşmeler | `schemas/*.schema.json` (JSON Schema 2020-12) | `crates/osiris-types/tests/schemas.rs` |
-> | API davranışı | `tests/contract/` (çalışan servise gerçek HTTP) | CI `integration` işi |
-> | DB ve kuyruk davranışı | `crates/osiris-server/tests/integration.rs` (gerçek PostgreSQL + Redis) | CI `integration` işi |
-> | Modeller (NER, embedding) | `fixtures/ner`, `fixtures/embedding` | `crates/osiris-pipeline/tests/models.rs` |
->
-> **Köken:** beklenen değerler R2–R6'da Python referans uygulamasından üretildi ve Rust'la birebir
-> eşleştirildi; Python uygulaması R7'de kaldırıldı (`1a4525f` öncesi git geçmişinde). Aşağıdaki
-> "Kaynak:" satırlarındaki Python dosyaları bu tarihsel referansı gösterir; güncel uygulama
-> adı geçen `crates/` dosyalarıdır.
->
-> **Değişiklik kuralı:** bir fixture'ın `expected` değerini değiştirmek *sözleşme
-> değişikliğidir*: bu belge güncellenir ve fark commit'te gerekçelendirilir.
+> Sürüm 1.0.0-rc · İlgili: [ARCHITECTURE.tr.md](ARCHITECTURE.tr.md), [API.tr.md](API.tr.md),
+> Rust geçiş kaydı [RUST_GECIS_DURUMU.md](RUST_GECIS_DURUMU.md)
+
+Bu belge OSIRIS'in sürümler arasında **değişmemesi gereken** davranışlarını tanımlar:
+tekilleştirme özeti, denetim zinciri, kuyruk, varlık çıkarma, SSRF kuralları, rapor ve graf
+çıktıları gibi. Bunlardan biri değişirse eski veriler yeniden işlendiğinde farklı sonuç verir,
+eski kayıtlar doğrulanamaz ya da dış sistemler (STIX tüketicileri, n8n) bozulur.
+
+## Bağlayıcı olan veridir
+
+Belgedeki anlatım yol göstericidir; **bağlayıcı olan testlerdeki veridir**:
+
+| Ne | Nerede | Doğrulama |
+|----|--------|-----------|
+| Altın veriler | `fixtures/` (dilden bağımsız JSON) | `cargo test --workspace` (crate'lerin `tests/fixtures.rs` dosyaları) |
+| Yapısal sözleşmeler | `schemas/*.schema.json` (JSON Schema 2020-12) | `crates/osiris-types/tests/schemas.rs` |
+| API davranışı | `tests/contract/` (çalışan servise gerçek HTTP) | CI `integration` işi |
+| Veritabanı ve kuyruk | `crates/osiris-server/tests/integration.rs` (gerçek PostgreSQL + Redis) | CI `integration` işi |
+| Modeller (NER, embedding) | `fixtures/ner`, `fixtures/embedding` | `crates/osiris-pipeline/tests/models.rs` |
+
+**Köken.** Beklenen değerler Rust geçişi (R2–R6) sırasında özgün Python uygulamasından üretildi
+ve Rust ile birebir eşleştirildi. Python uygulaması R7'de kaldırıldı (git geçmişinde `1a4525f`
+öncesi). Bu yüzden bazı kurallar "Python'daki gibi" tanımlıdır (ör. boşluk kümesi Python `re`
+`\s`'idir). Bu tanımlar artık Rust'ta dondurulmuştur; Python'un sonraki sürümleri onları
+değiştirmez.
+
+**Değişiklik kuralı.** Bir fixture'ın `expected` değerini değiştirmek ya da `tests/contract/`'taki
+bir beklentiyi gevşetmek **sözleşme değişikliğidir**: bu belge aynı commit'te güncellenir ve
+gerekçe commit iletisine yazılır.
 
 ---
 
 ## 1. `content_hash` (tekilleştirme anahtarı)
 
-Karar (2026-10-16): **bugünkü davranış aynen korunur** — NFC yok, küçük harfe çevirme yok, hash
-sürümü artırılmaz. Fixture: `fixtures/hash/cases.json` (23 durum).
+Uygulama: `crates/osiris-hash`. Fixture: `fixtures/hash/cases.json`.
 
-Girdi: kuyruk mesajındaki `item.raw_content` (dize). Adımlar **bu sırayla**:
+Karar (2026-10-16): Unicode normalizasyonu (NFC) yok, küçük harfe çevirme yok, hash sürümü yok.
 
-1. **Kes:** ilk 200 000 **Unicode kod noktası** (bayt değil, UTF-16 birimi değil).
-2. **HTML soy:** Python `BeautifulSoup(text, "html.parser").get_text(" ", strip=True)` ile birebir:
-   - her metin düğümü ayrı ayrı trim edilir, boş düğümler atılır, kalanlar **tek boşlukla** birleşir
-     (`a<br>b<b>c</b>d` → `a b c d`; `Ka<b>lın</b>` → `Ka lın` — satır içi etiket de boşluk ekler)
-   - `<script>` / `<style>` içeriği **atılır**; HTML yorumları atılır (yerine ayraç boşluğu kalır: `a<!--x-->b` → `a b`)
-   - öznitelik değerleri metne girmez; `CDATA` içeriği metindir
-   - entity çözümü `html.parser` kurallarıyla (`&amp b` → `& b`, `&foo;` → `&foo`) — kenar durumlar fixture'da
-   - bozuk HTML toleransı (`<p>açık <b>kalın`, `a < b > c`, `<<>>x<>`) fixture'da sabit
-   - Ayrıştırıcı istisna atarsa ham metin kullanılır.
-3. **Boşluk daralt:** aşağıdaki kümeden bir veya daha fazla karakter → tek `U+0020`.
-   Küme Python `re` `\s` (Unicode) ile aynıdır ve **Rust `char::is_whitespace`'ten farklıdır**:
-   `U+0009–000D, U+001C–001F, U+0020, U+0085, U+00A0, U+1680, U+2000–200A, U+2028, U+2029, U+202F, U+205F, U+3000`.
-   U+001C–U+001F Python'da boşluktur, Unicode `White_Space` değildir — Rust bunları **eklemelidir**.
-   U+200B (sıfır genişlik), U+FEFF boşluk **değildir**, korunur.
-4. **Trim** (aynı küme), sonra tekrar ilk 200 000 kod noktası.
+Girdi kuyruk mesajındaki `item.raw_content` dizesidir. Adımlar **bu sırayla** uygulanır:
+
+1. **Kes:** ilk 200 000 Unicode kod noktası (bayt ya da UTF-16 birimi değil).
+2. **HTML'den metne:** BeautifulSoup 4.15.0 `html.parser` + `get_text(" ", strip=True)` davranışı:
+   - her metin düğümü ayrı ayrı kırpılır, boş düğümler atılır, kalanlar **tek boşlukla** birleşir
+     (`a<br>b<b>c</b>d` → `a b c d`; `Ka<b>lın</b>` → `Ka lın` — satır içi etiket de boşluk ekler);
+   - `<script>` / `<style>` içeriği atılır; HTML yorumları atılır, yerlerine ayraç boşluğu kalır
+     (`a<!--x-->b` → `a b`);
+   - öznitelik değerleri metne girmez; `CDATA` içeriği metindir;
+   - varlık (entity) çözümü `html.parser` kurallarıyladır (`&amp b` → `& b`, `&foo;` → `&foo`);
+   - bozuk HTML toleransı (`<p>açık <b>kalın`, `a < b > c`, `<<>>x<>`) fixture'da sabittir;
+   - ayrıştırıcı hata verirse ham metin kullanılır (ör. 4 300 haneyi aşan ondalık sayısal referans).
+3. **Boşluk daralt:** aşağıdaki kümeden bir ya da daha fazla karakter → tek `U+0020`. Küme Python
+   `re` `\s` (Unicode) ile aynıdır ve Rust `char::is_whitespace`'ten **farklıdır**:
+   `U+0009–000D, U+001C–001F, U+0020, U+0085, U+00A0, U+1680, U+2000–200A, U+2028, U+2029, U+202F,
+   U+205F, U+3000`. `U+001C–001F` dahildir; `U+200B` ve `U+FEFF` boşluk değildir, korunur.
+4. **Kırp** (aynı küme), sonra yeniden ilk 200 000 kod noktası.
 5. `hex(sha256(utf8(sonuç)))` — küçük harfli 64 karakter.
 
 Notlar:
-- Hash'e yalnızca temizlenmiş metin girer; URL/başlık/kaynak girmez. Tekilleştirme **global**dir
-  (`items.content_hash UNIQUE`).
-- `Café` (U+00E9) ve `Café` farklı hash üretir (bilinçli: NFC yok).
-- Referans sürümler: `beautifulsoup4 4.15.0` + CPython **3.11.16** `html.parser`. bs4 sürüm
-  yükseltmesi bir sözleşme değişikliği olabilir → yükseltmede `generate.py --check` zorunlu.
-- **Rust (R4):** `crates/osiris-hash/src/html/` bu iki sürümün birebir portudur (tokenizer
-  regex'lerinin geri izleme sonuçları dahil; bs4'ün tek `feed()` + `close()` çağrısı iki geçiş
-  olarak modellenir). Entity, Windows-1252, boş öğe ve dize kabı tabloları bs4'ten üretilir
-  (`python tools/gen_html_tables.py`, CI `--check`). Artık Python sürümü davranışı değiştiremez:
-  `content_hash` Rust'ta dondurulmuştur.
-- Kenar durum: ondalık sayısal referans 4300 haneyi aşarsa (`&#111…;`) CPython `int()` sınırı
-  bs4'ü çökertir; adım 2 atlanır ve ham metin kullanılır (Rust aynı davranır).
 
-## 2. Denetim (audit) zinciri
+- Özete yalnızca temizlenmiş metin girer; URL, başlık ya da kaynak girmez. Tekilleştirme
+  **global**dir (`items.content_hash UNIQUE`): aynı metin farklı kaynaktan gelse de bir kez saklanır.
+- Birleşik `é` (U+00E9) ile ayrışık `e` + U+0301 farklı özet üretir (bilinçli: NFC yok).
+- HTML ayrıştırıcı `crates/osiris-hash/src/html/`, bs4 4.15.0 + CPython 3.11.16 `html.parser`'ın
+  birebir portudur. Varlık, Windows-1252, boş öğe ve dize kabı tabloları
+  `tools/gen_html_tables.py` ile bs4'ten üretilir (CI `--check`).
 
-Kaynak: `osiris-sdk/osiris/audit.py`, Rust: `crates/osiris-hash/src/audit.rs`. Fixture: `fixtures/audit/cases.json`. Migration 003.
+## 2. Denetim zinciri
 
-**Kayıt** (hash'e giren nesne) — tam olarak dört anahtar:
+Uygulama: `crates/osiris-hash/src/audit.rs` (özet), `crates/osiris-db` (yazma/doğrulama).
+Fixture: `fixtures/audit/cases.json`. Migration 003, 006.
+
+**Kayıt** — özete giren nesne tam olarak dört anahtardır:
 `{"user_id": str, "action": str, "resource": str, "detail": object}`. `id`, `ts`, `prev_hash` girmez.
 
-**Normalizasyon (yazmadan önce, saklanan değer = hash'lenen değer):**
-`user_id`/`resource`: `null` → `""`, sonra ilk 200 / 500 kod noktası. `detail`: JSON'a gidip döner
-(`null` → `{}`; nesne değilse `{"value": …}`; NaN/Infinity veya serileşemeyen → `{"_unserializable": true}`);
-`|n| > 2^53 − 1` tamsayılar **ondalık dizeye** çevrilir.
+**Normalizasyon** (yazmadan önce; saklanan değer = özetlenen değer):
+
+- `user_id` / `resource`: `null` → `""`, sonra ilk 200 / 500 kod noktası.
+- `detail`: JSON'a gidip döner. `null` → `{}`; nesne değilse `{"value": …}`; NaN/Infinity ya da
+  serileşemeyen değer → `{"_unserializable": true}`; `|n| > 2^53 − 1` tamsayılar ondalık dizeye.
 
 **Kanonik dizge** — `chain_version` sütununa göre:
 
 | Sürüm | Serileştirme |
-|---|---|
-| 1 | *(R7'de kaldırıldı)* Python `json.dumps(sort_keys=True, separators=(",", ":"))` — migration 003 öncesi kayıtlar; artık doğrulanmaz, "Bilinmeyen chain_version: 1" raporlanır |
-| **2** | **RFC 8785 (JCS)**. Doğrulamada güvenli aralık dışı tamsayılar önce float'a çevrilir (jsonb büyük float'ı tamsayı döndürür: `1e+16` → `10000000000000000`; JCS çıktısı aynıdır) |
+|-------|--------------|
+| 1 | Desteklenmiyor (R7 kararı, 2026-10-17). Migration 003 öncesi kayıtlar tabloda kalır ama doğrulanmaz; `Bilinmeyen chain_version: 1` raporlanır. |
+| **2** | **RFC 8785 (JCS)**. Doğrulamada güvenli aralık dışı tamsayılar önce float'a çevrilir (jsonb büyük float'ı tamsayı döndürür: `1e+16` → `10000000000000000`; JCS çıktısı aynıdır). |
 
-**Hash:** `hash = hex(sha256(utf8(prev + "|" + kanonik)))`; ilk kayıtta `prev = "GENESIS"`, DB'de
-ilk kaydın `prev_hash` sütunu `NULL`. Zincir sırası `id` artan; yazarlar
-`pg_advisory_xact_lock(hashtext('osiris_audit_chain'))` ile sıralanır.
-
-Yazıcı yalnızca v2 yazar (migration 003 zorunlu; 006 varsayılanı 2 yapar). **R7 kararı
-(kullanıcı, 2026-10-17):** v1 desteği tamamen kaldırıldı — tablodaki eski v1 kayıtlar
-değiştirilmez (append-only) ama `osiris-server audit-verify` onları doğrulamaz; v1 fixture
-durumları `fixtures/audit`'ten çıkarıldı.
+**Özet:** `hash = hex(sha256(utf8(prev + "|" + kanonik)))`. İlk kayıtta `prev = "GENESIS"` ve
+`prev_hash` sütunu `NULL`'dur. Zincir sırası `id` artan sıradır; yazıcılar
+`pg_advisory_xact_lock(hashtext('osiris_audit_chain'))` ile sıralanır. Yazıcı yalnızca v2 yazar.
+Doğrulama: `osiris-server audit-verify --limit N`.
 
 ## 3. STIX 2.1 çıktısı
 
-Kaynak: `ReportGenerator.generate_stix(identity_name, title, entities, *, now, bundle_id)`.
-Fixture: `fixtures/stix/cases.json` — **bayt bayt** (çıktı `json.dumps(…, ensure_ascii=False, indent=2)`).
+Uygulama: `crates/osiris-report` (`stix`). Fixture: `fixtures/stix/cases.json` — **bayt bayt**
+(çıktı 2 boşluk girintili, ASCII olmayan karakterler kaçışsız JSON).
 
 | Nesne | Kimlik |
-|---|---|
-| bundle | `bundle_id` parametresi (verilmezse uuid4 — sözleşme dışı) |
-| identity | `identity--` + UUIDv5(`NAMESPACE_DNS`, `"osiris.local"`) |
-| vulnerability / file | `<tip>--` + UUIDv5(`NAMESPACE_URL`, `"{etype}:{value.lower()}"`) |
-| indicator | `indicator--` + UUIDv5(`NAMESPACE_URL`, pattern dizgesi) |
+|-------|--------|
+| `bundle` | Verilen `bundle_id`; verilmezse rastgele UUIDv4 (sözleşme dışı) |
+| `identity` | `identity--` + UUIDv5(`NAMESPACE_DNS`, `"osiris.local"`) |
+| `vulnerability` (cve), `file` (hash) | `<tip>--` + UUIDv5(`NAMESPACE_URL`, `"{etype}:{value.lower()}"`) |
+| `indicator` (ip, domain, email, crypto_address) | `indicator--` + UUIDv5(`NAMESPACE_URL`, pattern dizgesi) |
 
-Zaman damgaları: `now` → UTC `%Y-%m-%dT%H:%M:%S.000Z`. Varlık eşlemesi, değer temizliği (CR/LF →
-boşluk, 500 kod noktası), pattern kaçışı (`\` → `\\`, `'` → `\'`), IPv6 tespiti (`:` içeriyorsa) ve
-atlanan tipler fixture'dadır. Bilinen sapma: STIX'in SCO için önerdiği namespace
-(`00abedb4-…`) kullanılmıyor; değiştirmek sözleşme değişikliğidir.
+- Eşleme: `ip` → `ipv4-addr:value` (değer `:` içeriyorsa `ipv6-addr`), `domain` → `domain-name:value`,
+  `email` → `email-addr:value`, `crypto_address` → `cryptocurrency-wallet:value`, `hash` → `file`
+  (`hashes.MD5`), `cve` → `vulnerability` (`name`). Diğer türler atlanır.
+- Zaman damgaları UTC `%Y-%m-%dT%H:%M:%S.000Z`. Değer temizliği: CR/LF → boşluk, ilk 500 kod
+  noktası. Pattern kaçışı: `\` → `\\`, `'` → `\'`.
+- Bilinen sapma: STIX'in SCO için önerdiği namespace (`00abedb4-…`) kullanılmıyor; değiştirmek
+  sözleşme değişikliğidir.
 
 ## 4. Plugin sözleşmesi
 
-- **Manifest:** `schemas/manifest.schema.json`. `config_schema` alan biçimi: `{type, required?, default?, description?}`.
-  `required: true` → değer `null` veya `""` ise görev çalıştırılmaz.
+Uygulama: `crates/osiris-plugin` (host), `crates/osiris-plugins` (11 plugin). Fixture:
+`fixtures/plugins/*.json` (11 plugin, 23 senaryo).
+
+- **Manifest:** `schemas/manifest.schema.json`. `config_schema` alan biçimi
+  `{type, required?, default?, description?}`. `required: true` → değer `null` ya da `""` ise
+  görev çalıştırılmaz.
 - **Sonuç:** `schemas/collection_result.schema.json` + `schemas/collected_item.schema.json`.
-  `success=false` ⇒ `items` boş, `error` dolu. **`error` metni sözleşme dışıdır** (yalnızca varlığı bağlayıcı).
-- **Davranış:** `fixtures/plugins/*.json` — 11 plugin, 23 senaryo. Her dosya: `config`, kayıtlı
-  `http` değiş tokuşları (method, url, params, json → status, headers, body), `dns`, `sockets` ve
-  beklenen `expected` + `expected_network` (tüm HTTP kayıtları tüketilmeli; açılan soket adresleri).
-  Fixture'larda DNS her host'u `93.184.216.34`'e çözer.
-- **Ağ erişimi (host sağlar):** HTTP yalnızca `fetch_url` semantiğiyle: http/https, URL'de kimlik yok,
-  her yönlendirme adımında SSRF denetimi, en fazla 3 yönlendirme, 303 → GET, 301/302 + POST → GET,
-  gövde `max_bytes` ile kesilir. SSRF: engelli bloklar (RFC1918, loopback, link-local/metadata, CGNAT,
-  TEST-NET, multicast, `::1`, `fc00::/7`, `fe80::/10`, `0.0.0.0`, `::`); **IPv4-mapped IPv6 açılarak**
-  denetlenir; DNS kayıtlarından **biri bile** engelliyse host reddedilir; çözülemeyen host reddedilir.
-  Ham TCP yalnızca `safe_create_connection` ile (çöz → denetle → **doğrulanmış IP'ye** bağlan).
-- **Rust plugin'leri (R5):** `crates/osiris-plugins` aynı 23 fixture'ı `cargo test` ile geçer
-  (sonuç + ağ raporu). Config dönüşümleri Python semantiğiyle (`int()`, `float()`, `str()`,
-  `repr()`, `bool()`), Python'da yakalanmayan istisnalar `plugin hatası` olur.
-  - **web-scraper / tor / i2p:** bs4 ağacı (`html.parser` portu) + soupsieve seçicilerinin
-    alt kümesi (tür, `#id`, `.class`, öznitelik işleçleri, birleştiriciler, `:nth-*`, `:not`,
-    `:is`); desteklenmeyen seçici → tüm belge (Python'daki hata dalı gibi). soupsieve 3.0.3
-    davranışları taklit edilir (üst düzeyde `~` eşleşmez, `:empty` CData'yı saymaz).
-  - **rss:** feedparser alan kuralları (`osiris-feed`). **Eşdeğerlik `content_hash`
-    düzeyindedir:** girdi sayısı, `link`, `published` birebir; `raw_content` (temizlenmiş HTML)
-    `clean()` sonrası aynı, ham markup feedparser'ın sgmllib çıktısından farklı olabilir;
-    HTML içeren başlıklarda yalnızca kaçış biçimi (`&amp;`/`&`) farklı olabilir.
-  - **HTTP yanıt metni:** requests kuralları (başlıktaki charset; `text/*` → ISO-8859-1;
-    `application/json` → UTF-8; aksi halde UTF-8 ya da windows-1252 — charset_normalizer
-    tahmini birebir değildir). gzip/deflate çözülür.
-  - **username-search:** gömülü site DB'leri; `sites_db` plugin dizinindeki dosyalar ya da
-    `OSIRIS_USERNAME_DB_DIR` (plugin dizinine mutlak yol Rust'ta kabul edilmez).
-- **JSON kayıtların `raw_content`'i (R5 kararı, 2026-10-17):** `rest-api` ve `shodan` kaydı
-  **kanonik JSON** yazar (`osiris.records.record_json`, Rust `osiris_hash::canonical::record_json`):
-  RFC 8785 anahtar sırası (UTF-16) ve dize/sayı biçimi; tamsayılar her büyüklükte **tam ondalık**
-  (JCS'nin ±2^53 sınırı uygulanmaz), `NaN`/`±Infinity` → `null`; kayıt bir dize ise olduğu gibi
-  (tırnaksız). Yanıt gövdesi Python `json.loads` semantiğiyle okunur (tekrarlanan anahtarda ilk konum
-  + son değer, `NaN`/`Infinity` kabul). Eşlenmemiş UTF-16 vekili (`\ud800`): Python dizede taşır
-  ve kuyruğa yazarken hata verir, Rust U+FFFD yazar (tek bilinen fark). Önceki biçim Python
-  `str(dict)` idi; **bu iki plugin'in geçişten sonraki öğelerinin `content_hash`'i değişti** (aynı
-  kayıt bir kez daha saklanabilir; saklama süresiyle temizlenir).
-- **`.i2p` (E15):** I2P plugin'i `allow_i2p` ile çağırır; `.i2p` host'u DNS'e sorulmaz (I2P
-  proxy'si çözer). Önceden DNS denetimi `.i2p` adlarını çözemediği için plugin hiç çalışamıyordu.
+  `success=false` ⇒ `items` boş, `error` dolu. **`error` metni sözleşme dışıdır**; yalnızca varlığı
+  bağlayıcıdır.
+- **Senaryo dosyası:** `config`, kayıtlı `http` alışverişleri (method, url, params, json → status,
+  headers, body), `dns`, `sockets`, beklenen `expected` ve `expected_network` (tüm HTTP kayıtları
+  tüketilmeli; açılan soket adresleri raporlanır). DNS her host'u `93.184.216.34`'e çözer.
+- **HTTP (host sağlar):** yalnızca `http`/`https`; URL'de kimlik bilgisi yok; her yönlendirme
+  adımında SSRF denetimi; en çok 3 yönlendirme; 303 → GET, 301/302 + POST → GET; gövde
+  `max_bytes` ile kesilir; gzip/deflate çözülür. Yanıt metni requests kurallarıyla çözülür:
+  başlıktaki charset; `text/*` → ISO-8859-1; `application/json` → UTF-8; aksi hâlde UTF-8 ya da
+  windows-1252.
+- **Ham TCP:** yalnızca çöz → denetle → **doğrulanmış IP'ye** bağlan.
+- **Yapılandırma dönüşümleri** Python semantiğindedir (`int()`, `float()`, `str()`, `bool()`);
+  beklenmeyen girdi `plugin hatası` olur.
+- **HTML plugin'leri** (web-scraper, tor, i2p): §1'deki ayrıştırıcı + soupsieve 3.0.3 seçicilerinin
+  alt kümesi (tür, `#id`, `.class`, öznitelik işleçleri, birleştiriciler, `:nth-*`, `:not`,
+  `:is`); desteklenmeyen seçici → tüm belge. Üst düzeyde `~` eşleşmez, `:empty` CDATA'yı saymaz.
+- **rss:** feedparser alan kuralları (`crates/osiris-feed`, tablolar `tools/gen_feed_tables.py`).
+  Eşdeğerlik `content_hash` düzeyindedir: girdi sayısı, `link`, `published` birebir; temizlenmiş
+  `raw_content` aynı; HTML içeren başlıklarda yalnızca kaçış biçimi (`&amp;`/`&`) farklı olabilir.
+- **rest-api ve shodan `raw_content`'i** (R5 kararı, 2026-10-17): kaydın **kanonik JSON**'u
+  (`osiris_hash::canonical::record_json`) — RFC 8785 anahtar sırası (UTF-16) ve dize/sayı biçimi;
+  tamsayılar her büyüklükte tam ondalık; `NaN`/`±Infinity` → `null`; kayıt bir dizeyse olduğu gibi.
+  Yanıt gövdesi Python `json.loads` semantiğiyle okunur (tekrarlanan anahtarda ilk konum + son
+  değer; `NaN`/`Infinity` kabul). Eşlenmemiş UTF-16 vekili U+FFFD olur.
+- **username-search:** site DB'leri gömülüdür; `sites_db` yalnızca gömülü DB adlarını ya da
+  `OSIRIS_USERNAME_DB_DIR` altındaki `.json` dosyalarını gösterebilir.
+- **`.i2p`:** I2P plugin'i `allow_i2p` ile çağrılır; `.i2p` host'u DNS'e sorulmaz (proxy çözer).
 
-## 5. Kuyruk (Redis Streams, R3)
+## 5. Kuyruk (Redis Streams)
 
-Kaynak: `osiris-sdk/osiris/queue.py` (sabitler tek yerde). Doğrulama: `crates/osiris-server/tests/integration.rs` (kuyruk testleri).
+Uygulama: `crates/osiris-queue` (üretici), `crates/osiris-pipeline/src/stream.rs` (tüketici).
+Doğrulama: `crates/osiris-server/tests/integration.rs`.
 
-**Mesaj** — `schemas/queue_message.schema.json`, UTF-8 JSON, en fazla 512 000 bayt:
-`{"plugin_id", "source_id" (UUID küçük harf | null), "item": CollectedItem, "collected_at": epoch_sn}`.
-`source_id` R2'de eklendi; alanı olmayan mesajlar `null` sayılır. Pipeline yalnızca geçerli UUID'yi kabul
-eder; kaynak silinmişse öğe `source_id = NULL` ile yazılır.
-
-**Taşıma:**
+**Mesaj** — `schemas/queue_message.schema.json`, UTF-8 JSON, en çok 512 000 bayt:
+`{"plugin_id", "source_id" (küçük harf UUID | null), "item": CollectedItem, "collected_at": epoch_sn}`.
+`source_id` alanı olmayan mesajlar `null` sayılır. İşçi yalnızca geçerli UUID'yi kabul eder;
+kaynak silinmişse öğe `source_id = NULL` ile yazılır.
 
 | Öğe | Değer |
-|---|---|
-| Akış | `osiris:stream:raw_items`; girdi tek alanlı: `data` = mesaj JSON'u |
+|-----|-------|
+| Akış | `osiris:stream:raw_items`; tek alanlı girdi: `data` = mesaj JSON'u |
 | Üretici | `XADD … MAXLEN ~ OSIRIS_STREAM_MAXLEN (200 000) * data <json>` |
-| Tüketici grubu | `osiris-pipeline` (`XGROUP CREATE … 0 MKSTREAM`), tüketici adı `OSIRIS_PIPELINE_CONSUMER` veya `host-pid` |
-| Tur sırası | (1) eski LIST `osiris:raw_items` → `LPOP` ile boşalt; (2) `XAUTOCLAIM` min-idle 300 sn; (3) `XREADGROUP >` |
+| Tüketici grubu | `osiris-pipeline` (`XGROUP CREATE … 0 MKSTREAM`); tüketici adı `OSIRIS_PIPELINE_CONSUMER` ya da `host-pid` |
+| Tur sırası | (1) eski LIST `osiris:raw_items` → `LPOP` ile boşalt; (2) `XAUTOCLAIM` en az 300 sn boşta; (3) `XREADGROUP >` |
 | Başarı | `XACK` + `XDEL` (akış yalnızca işlenmemiş/bekleyen girdileri tutar) |
 | Bozuk mesaj | ölü-mektup akışı `osiris:stream:raw_items:dead` (`reason=invalid: …`), sonra `XACK` + `XDEL` |
-| Depolama hatası | girdi bekleyen listesinde kalır, süre dolunca yeniden alınır; teslim sayısı > 5 → ölü-mektup (`reason=max_deliveries`) |
+| Depolama hatası | girdi bekleyen listede kalır, süre dolunca yeniden alınır; teslim sayısı > 5 → ölü-mektup (`reason=max_deliveries`) |
 | Eski LIST'te depolama hatası | mesaj akışa aktarılır (kaybolmaz) |
 
-Teslim garantisi: **en az bir kez**. Aynı mesajın iki kez işlenmesi zararsızdır: `content_hash` UNIQUE
-(`ON CONFLICT DO NOTHING`) ve varlık bağları upsert'tir. Ölü-mektup girdisi orijinal alanlar +
-`source_id` (asıl girdi kimliği) + `reason` taşır.
+Teslim garantisi **en az bir kez**dir. Aynı mesajın iki kez işlenmesi zararsızdır: `content_hash`
+UNIQUE (`ON CONFLICT DO NOTHING`) ve varlık bağları upsert'tir. Ölü-mektup girdisi orijinal
+alanları + `source_id` (asıl girdi kimliği) + `reason`'u taşır.
 
-**Rust işçisi (R5):** `osiris-server pipeline` aynı akış, grup, ölü-mektup, `MAXLEN` ve
-teslim kurallarını uygular; `tests/integration/test_rust_pipeline_parity.py` aynı mesajları
-Python ve Rust işçisine işletip veritabanlarını karşılaştırır (öğeler, varlıklar, embedding,
-ölü-mektup sayısı). Collector (`osiris-server collector`) mesajı `QueueMessage` şemasıyla
-yazar; zamanlama standart 5 alanlı cron (UTC, haftanın günü 0/7 = Pazar), varsayılan kapalı
-(`OSIRIS_SCHEDULER=on`).
+**Zamanlama:** standart 5 alanlı cron (UTC; haftanın günü 0 ve 7 = Pazar), kaynak başına aynı anda
+tek çalışma, varsayılan kapalı (`OSIRIS_SCHEDULER=on`).
 
 ## 6. Veri saklama ve silme (KVKK)
 
-Migration 004, `osiris/retention.py`. Doğrulama: `tests/integration`.
+Uygulama: `crates/osiris-db` (`purge_expired`, `purge_orphan_entities`), API uçları. Migration 004.
 
-- `sources.retention_days`: `NULL` → varsayılan; `0` → süreyle silinmez; `N` (1-36500) → `collected_at`'i
-  `N` günden eski öğeler silinir. Kaynaksız öğelere varsayılan uygulanır.
-- Varsayılan: `OSIRIS_RETENTION_DAYS` (180; `0` = varsayılan kapalı, yalnızca pozitif kaynak süreleri).
-- Silinen öğelerin varlık bağları kaskadla gider; **hiçbir öğeye bağlı kalmayan varlıklar da silinir**.
+- `sources.retention_days`: `NULL` → varsayılan; `0` → süreyle silinmez; `N` (1–36 500) →
+  `collected_at`'i `N` günden eski öğeler silinir. Kaynaksız öğelere varsayılan uygulanır.
+- Varsayılan: `OSIRIS_RETENTION_DAYS` (180; `0` = varsayılan kapalı, yalnızca pozitif kaynak
+  süreleri uygulanır).
+- Silinen öğelerin varlık bağları kaskadla gider; **hiçbir öğeye bağlı kalmayan varlıklar da
+  silinir**.
 - Uçlar (admin): `DELETE /items/{id}`, `POST /entities/erase {entity_type, value, delete_items}`
-  (tip + büyük/küçük harf duyarsız değer; graf kenarlarındaki aynı ad da silinir),
-  `POST /admin/retention/run`. Pipeline: `--purge`, `--loop` içinde `OSIRIS_RETENTION_INTERVAL` sn.
-- **Denetim kaydına silinen kişisel veri yazılmaz**, yalnızca `value_sha256` (küçük harfli değerin özeti).
+  (tip + kırpılmış, büyük/küçük harf duyarsız değer; aynı adlı graf kenarları da silinir),
+  `POST /admin/retention/run`. İşçi `--loop` içinde `OSIRIS_RETENTION_INTERVAL` saniyede bir;
+  `osiris-server purge` tek seferlik.
+- **Denetim kaydına silinen kişisel veri yazılmaz**; yalnızca `value_sha256` (küçük harfli değerin
+  özeti) yazılır.
 
 ## 7. REST API
 
-Bağlayıcı tanım `tests/contract/` paketidir (ayrıntılı başvuru: [API.md](API.md)). Paket Rust
-API'sine (R6, `osiris-server api`) **değiştirilmeden** koşar; Python API'ye karşı da yeşildir.
-Zaman damgaları pydantic biçimindedir: UTC, `YYYY-MM-DDTHH:MM:SS[.ffffff]Z` (mikrosaniye sıfırsa
-kesirsiz, değilse 6 hane). R6–R7 arasında `tests/parity/` iki API'nin köşe durum ve gövde
-eşdeğerliğini ayrıca sınar. Özet: kimlik sırası operatör `X-API-Key` → `Bearer` JWT
-(HS256 sabit; sır yalnızca `OSIRIS_JWT_SECRET`) → DB anahtarı (SHA-256); roller viewer < analyst < admin;
-anahtarsız başlatma reddedilir (`OSIRIS_INSECURE_OPEN=1` hariç); hata gövdesi `{"detail": …}` ve iç
-ayrıntı içermez; kodlar 400/401/403/404/409/413/422/500/502/503.
+Bağlayıcı tanım `tests/contract/` paketidir; ayrıntılı başvuru [API.tr.md](API.tr.md).
+
+- Zaman damgaları UTC, `YYYY-MM-DDTHH:MM:SS[.ffffff]Z` (mikrosaniye sıfırsa kesirsiz, değilse 6 hane).
+- Kimlik sırası: operatör `X-API-Key` → `Bearer` JWT (HS256 sabit; sır yalnızca
+  `OSIRIS_JWT_SECRET`) → veritabanı anahtarı (SHA-256 özeti). Roller `viewer` < `analyst` < `admin`.
+- Anahtarsız başlatma reddedilir (`OSIRIS_INSECURE_OPEN=1` hariç).
+- Hata gövdesi `{"detail": …}`, iç ayrıntı içermez; kodlar 400/401/403/404/405/409/413/422/429/500/502/503.
+- Liste uçlarının sayfa sınırları, bozuk UUID'nin `404` olması, alan uzunluk sınırları ve kaynak
+  sırlarının maskelenmesi (her derinlikte; `********` güncellemede eski değeri korur) paketle
+  sabittir.
 
 ## 8. Varlık çıkarma (regex)
 
-Kaynak: `ProcessingPipeline.extract_entities`, Rust: `crates/osiris-extract`. Fixture:
-`fixtures/extract/cases.json` (NER kapalı; NER §11'de ayrı fixture'larla sabitlenmiştir). Python `re`
-Unicode modunda: `\d` ve `\b` Unicode'dur. Rust'a taşırken bilinmesi gereken farklar:
+Uygulama: `crates/osiris-extract`. Fixture: `fixtures/extract/cases.json` (NER kapalıyken).
+Desenler Python `re` Unicode modundaki anlamlarıyla uygulanır:
 
-- Kelime karakteri (`\b` için) Python'da `[\p{L}\p{N}_]`'dir; Rust `\w` işaretleri (M), Pc ve
-  ZWJ/ZWNJ'yi de içerir → `\b` yerine `(?<![\p{L}\p{N}_])` / `(?![\p{L}\p{N}_])`.
-- `IGNORECASE` ile `[a-z]` Python'da **İ ı ſ K** (U+0130, U+0131, U+017F, U+212A) karakterlerini
-  de eşler (`BİLGİ.COM` → `bi̇lgi̇.com`); Rust sınıfı elle genişletir.
-- `\s` §1'deki Python kümesidir (U+001C–U+001F dahil).
+- Kelime sınırı (`\b`) için kelime karakteri `[\p{L}\p{N}_]`'dir (işaretler, Pc, ZWJ/ZWNJ değil).
+- `IGNORECASE` ile `[a-z]` **İ ı ſ K** (U+0130, U+0131, U+017F, U+212A) karakterlerini de eşler
+  (`BİLGİ.COM` → `bi̇lgi̇.com`).
+- `\s` §1'deki kümedir; `\d` Unicode rakamlarıdır.
 
 | Sıra | Tip | Desen | Ek kural |
-|---|---|---|---|
+|------|-----|-------|----------|
 | 1 | email | `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}` | — |
-| 2 | ip | `\b(?:\d{1,3}\.){3}\d{1,3}\b` | `ipaddress.ip_address` geçmeli |
+| 2 | ip | `\b(?:\d{1,3}\.){3}\d{1,3}\b` | geçerli bir IP adresi olmalı |
 | 3 | domain | `\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b` (IGNORECASE) | başlangıcı bir e-posta aralığındaysa atlanır; değer küçük harfe iner |
-| 4 | phone | `\+?\d[\d\s\-().]{7,}\d` | IP / CVE / kripto aralığıyla çakışırsa atlanır; rakam sayısı 7-15 |
+| 4 | phone | `\+?\d[\d\s\-().]{7,}\d` | IP / CVE / kripto aralığıyla çakışırsa atlanır; rakam sayısı 7–15 |
 | 5 | crypto_address | `\b(bc1\|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b\|\b0x[a-fA-F0-9]{40}\b` | — |
 | 6 | cve | `\bCVE-\d{4}-\d{4,7}\b` (IGNORECASE) | değer büyük harfe çıkar |
 
-Değer: trim + ilk 500 kod noktası. Tekilleştirme `(tip, değer.lower())` ile, **ilk görülen** biçim
-kalır. Çıktı sırası yukarıdaki tip sırası, tip içinde metindeki sıra. Çakışma denetimi: aralık
-`[s, e)`; `s ≤ başlangıç < e` veya `s < bitiş ≤ e`.
+Değer: kırp + ilk 500 kod noktası. Tekilleştirme `(tip, değer.lower())` ile yapılır, **ilk görülen**
+biçim kalır. Çıktı sırası yukarıdaki tip sırası, tip içinde metindeki sıradır. Çakışma denetimi
+aralığı `[s, e)`'dir: `s ≤ başlangıç < e` ya da `s < bitiş ≤ e`.
 
 ## 9. Graf analizi
 
-Fixture: `fixtures/graph/cases.json`. Graf **yönsüz, çift başına tek kenar** (aynı çifte farklı
-`relation_type` eklemek öncekini ezer), öz döngü yok sayılır.
+Uygulama: `crates/osiris-graph`. Fixture: `fixtures/graph/cases.json`.
 
+- Graf **yönsüzdür**, düğüm çifti başına tek kenar vardır (aynı çifte farklı `relation_type`
+  eklemek öncekinin yerine geçer), öz döngü yok sayılır.
 - Merkezilik: derece merkeziliği `derece / (n − 1)`; tek düğümlü grafta `1.0` (networkx tanımı).
   Fixture 12 ondalığa yuvarlar.
-- Topluluk: Clauset–Newman–Moore açgözlü modülerlik (networkx `greedy_modularity_communities`,
-  ağırlıksız). **Topluluk ve üye sırası sözleşme dışıdır** (fixture sıralı listeler karşılaştırır).
-  Kenarsız graf → her düğüm kendi topluluğu.
-- `/graph` gövdesi (`to_json`): düğümler ekleme sırasıyla `{"id", …nitelikler}`, kenarlar networkx
-  kenar görünümü sırasıyla `{"source", "target", "relation_type", "weight"}`. GraphML çıktısı
-  networkx `write_graphml` ile **bayt bayt** aynıdır (fixture `graphml`). Rust: `crates/osiris-graph`
-  (CNM networkx 3.6.1'den adım adım taşındı).
+- Topluluk: Clauset–Newman–Moore açgözlü modülerlik (networkx 3.6.1 `greedy_modularity_communities`,
+  ağırlıksız; adım adım taşındı). **Topluluk ve üye sırası sözleşme dışıdır.** Kenarsız graf →
+  her düğüm kendi topluluğu.
+- `/graph` gövdesi: düğümler ekleme sırasıyla `{"id", …nitelikler}`, kenarlar
+  `{"source", "target", "relation_type", "weight"}`. GraphML çıktısı networkx `write_graphml` ile
+  **bayt bayt** aynıdır.
 
-## 10. Embedding (R3 / K5)
+## 10. Embedding
 
-Kaynak: `ProcessingPipeline.generate_embedding`. Fixture: `fixtures/embedding/cases.json`.
-Migration 005 (`items.embedding_v2 VECTOR(384)`, `items.embedding_model`); eski `items.embedding VECTOR(1536)` sütunu migration 006 ile kaldırıldı (semantik arama yalnızca 384 boyut).
+Uygulama: `crates/osiris-pipeline/src/embed.rs`. Fixture: `fixtures/embedding/cases.json`.
+Migration 005 (`items.embedding_v2 VECTOR(384)`, `items.embedding_model`); eski 1536 boyutlu
+sütun migration 006 ile kaldırıldı.
 
 - Model `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`; ONNX dosyası
-  `Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q@faf4aa42…` `model_optimized.onnx`
-  (`osiris-server models`, sha256 doğrulamalı; revizyonlar `crates/osiris-pipeline/src/models.rs`).
-- Girdi: `cleaned_content`'in ilk 8000 kod noktası; tokenizer'ın kendi kesmesi (fastembed varsayılanı)
-  uygulanır. Çıktı **L2-normalize** edilir; sıfır vektör → vektör yok.
-- Karşılaştırma bayt bayt **değildir**: her fixture vektörüyle kosinüs ≥ 0.999 (ONNX çalışma zamanı/CPU farkı).
-- **Bağlam uzunluğu 128 token:** Python fastembed `tokenizer_config.json`'daki
-  `model_max_length` (512) ve `max_length` (128) değerlerinin küçüğünü kullanır; Rust aynı
-  kuralı açıkça uygular (fastembed-rs yalnızca `model_max_length`'e bakar). Rust: mean pooling,
-  statik kuantizasyon (`crates/osiris-pipeline/src/embed.rs`).
-- `embedding_model` sütunu vektörü üreten modeli kaydeder; farklı modellerin vektörleri karıştırılmaz.
+  `Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q` `model_optimized.onnx` (sabit revizyon ve
+  sha256: `crates/osiris-pipeline/src/models.rs`).
+- Girdi `cleaned_content`'in ilk 8 000 kod noktasıdır; bağlam **128 token** (tokenizer
+  yapılandırmasındaki `model_max_length` 512 ile `max_length` 128'in küçüğü). Mean pooling,
+  ardından **L2 normalize**; sıfır vektör → vektör yok.
+- Karşılaştırma bayt bayt değildir: her fixture vektörüyle kosinüs ≥ 0,999 (ONNX çalışma zamanı ve
+  CPU farkı).
+- `embedding_model` vektörü üreten modeli kaydeder; farklı modellerin vektörleri karıştırılmaz.
   Vektörlenemeyen (boş) öğe `"<model>#skip"` ile işaretlenir.
-- Semantik arama: 384 boyutlu sorgu → `embedding_v2 <=> sorgu` (kosinüs), `similarity = 1 − mesafe`.
+- Semantik arama: 384 boyutlu sorgu vektörü, `embedding_v2 <=> sorgu` (kosinüs mesafesi),
+  `similarity = 1 − mesafe`.
 
-## 11. NER (R3 / K4)
+## 11. NER ve dil tespiti
 
-Kaynak: `osiris-pipeline/osiris_pipeline/ner.py` (kurallar modül belgesinde, birebir).
-Fixture: `fixtures/ner/cases.json` (model gerekir) + `osiris-pipeline/tests/test_ner_rules.py`
-(birleştirme kuralları, model gerekmez).
+Uygulama: `crates/osiris-pipeline/src/ner.rs`, `lang.rs`. Fixture: `fixtures/ner/cases.json`
+(model gerekir).
 
-- Model `onnx-community/bert-base-multilingual-cased-ner-hrl-ONNX@cfe67b1c…` `onnx/model_int8.onnx`
-  (Davlan mBERT-hrl, AFL-3.0 — repoda dağıtılmaz). CPU, `intra_op_num_threads = 1`.
-- Özet: ilk 10 000 kod noktası → özel tokensız tokenize → 510 token'lık pencereler (`[CLS]…[SEP]`)
-  → argmax → kelime etiketi = ilk alt-token → BIO birleştirme → uçlardan boşluk + Unicode `P*`
-  noktalama atılır → < 2 kod noktası atılır. PER→person, ORG→org, LOC→location, DATE atılır.
-- **Ofsetler Unicode kod noktasıdır** (Python tokenizers). Rust tokenizers bayt ofseti döndürür —
-  dilimlemeden önce kod noktasına çevrilmelidir (`fixtures/ner` `emoji_ofset` durumu bunu sınar).
-- Varlıklar regex varlıklarından **sonra** eklenir ve aynı `(tip, değer.lower())` tekilleştirmesine
-  girer (§8). Model veya çalışma zamanı yoksa yalnızca regex çalışır (`OSIRIS_NER=off` ile de).
-- **Rust (R5):** `ort` 2.0.0-rc.13 + `tokenizers`, aynı kurallar (`crates/osiris-pipeline/src/ner.rs`);
-  `fixtures/ner` 9/9.
-- **Dil tespiti (R5 kararı):** Rust `lingua` (16 dil, deterministik), Python `langdetect`
-  (rastgele tohumlu). `language` sözleşme dışıdır, hash'e girmez.
-- Karşılaştırma: aynı model + aynı CPU sınıfında birebir eşitlik beklenir; int8 çekirdeklerinde
-  CPU'ya bağlı nadir argmax farkları görülürse fixture'a tolerans eklenmesi sözleşme değişikliğidir.
+- Model `onnx-community/bert-base-multilingual-cased-ner-hrl-ONNX` `onnx/model_int8.onnx` (Davlan
+  mBERT-hrl, AFL-3.0 — depoda dağıtılmaz). CPU, `intra_op_num_threads = 1`.
+- Kurallar: ilk 10 000 kod noktası → özel tokensız tokenize → 510 token'lık pencereler
+  (`[CLS]…[SEP]`) → argmax → kelime etiketi = ilk alt-token → BIO birleştirme → uçlardan boşluk ve
+  Unicode `P*` noktalama atılır → 2 kod noktasından kısa olanlar atılır. `PER` → `person`,
+  `ORG` → `org`, `LOC` → `location`; `DATE` atılır.
+- **Ofsetler Unicode kod noktasıdır** (tokenizer'ın bayt ofsetleri dilimlemeden önce çevrilir;
+  `emoji_ofset` durumu bunu sınar).
+- NER varlıkları regex varlıklarından **sonra** eklenir ve aynı `(tip, değer.lower())`
+  tekilleştirmesine girer. Model yoksa ya da `OSIRIS_NER=off` ise yalnızca regex çalışır.
+- Aynı model ve aynı CPU sınıfında birebir eşitlik beklenir; int8 çekirdeklerinde CPU'ya bağlı
+  nadir argmax farkları için fixture'a tolerans eklemek sözleşme değişikliğidir.
+- **Dil tespiti** lingua ile 16 dilde yapılır (Arapça, Çince, Felemenkçe, İngilizce, Fransızca,
+  Almanca, İtalyanca, Japonca, Korece, Farsça, Lehçe, Portekizce, Rusça, İspanyolca, Türkçe,
+  Ukraynaca; metnin ilk 500 karakteri). Kod ISO 639-1'dir (Çince `zh-cn`), belirsizse `unknown`.
+  `language` alanı sözleşme dışıdır ve özete girmez.
 
-## 12. Güvenlik: SSRF denetimi ve sanitizer'lar (R4)
+## 12. SSRF denetimi ve temizleyiciler
 
-Kaynak: `osiris-sdk/osiris/security.py`, Rust: `crates/osiris-security`. Fixture:
-`fixtures/security/cases.json` (dosyadaki sabit `dns` haritasıyla; haritada olmayan host
-çözülemez). **Hata iletileri sözleşmenin parçasıdır** (kullanıcıya/plugin sonucuna yansır).
+Uygulama: `crates/osiris-security`. Fixture: `fixtures/security/cases.json` (dosyadaki sabit
+`dns` haritasıyla; haritada olmayan host çözülemez). **Hata iletileri sözleşmenin parçasıdır**
+(kullanıcıya ve plugin sonucuna yansır).
 
-- URL: boş ya da > 2048 kod noktası → red. Kırpılmış URL'de **ters eğik çizgi, C0 kontrol
-  karakteri veya DEL** → `URL geçersiz karakter içeriyor` (E14: urllib3 `\` ile yetki bölümünü
-  bitirir, `urlparse` bitirmez — `http://127.0.0.1\x.saldirgan.example/` denetimde saldırganın
-  alan adı, bağlantıda 127.0.0.1 idi). Bölme CPython 3.11.16 `urlsplit` ile birebir (WHATWG değil).
+- URL: boş ya da 2 048 kod noktasından uzun → red. Kırpılmış URL'de **ters eğik çizgi, C0 kontrol
+  karakteri ya da DEL** → `URL geçersiz karakter içeriyor` (E14: `http://127.0.0.1\x.saldirgan.example/`
+  denetimde saldırganın alan adı, bağlantıda 127.0.0.1 olurdu). Bölme CPython 3.11 `urlsplit`
+  kurallarıyladır (WHATWG değil).
 - Şema yalnızca `http`/`https`; kullanıcı bilgisi (boş olmayan kullanıcı ya da parola) yasak;
-  `.onion` yalnızca `allow_onion`, `.i2p` yalnızca `allow_i2p` ile (DNS'e gidilmez, E15); port 1–65535.
+  `.onion` yalnızca `allow_onion`, `.i2p` yalnızca `allow_i2p` ile (DNS'e gidilmez); port 1–65535.
 - Host: kırp → küçük harf → sondaki noktalar atılır; `localhost` red; IP literali Python
-  `ipaddress` kurallarıyla (baştaki sıfırlı IPv4 literal değildir → DNS'e gider), değilse DNS.
-  Kayıt yoksa red; **herhangi bir** kayıt engelli bloktaysa red (fail-closed). IPv4-mapped IPv6
-  açılarak denetlenir; `0.0.0.0` / `::` engelli. Dönen IP'ler Python `str(ip)` biçimindedir.
-- Sanitizer'lar (`sanitize_domain`, `sanitize_hostname`, `sanitize_irc_token`,
-  `sanitize_channel`, `mask_secret`): uzunluklar kod noktası; "alfanümerik" = Python
-  `str.isalnum()` = `[\p{L}\p{N}]`.
+  `ipaddress` kurallarıyla (baştaki sıfırlı IPv4 literal sayılmaz → DNS'e gider), değilse DNS.
+  Kayıt yoksa red; **herhangi bir** kayıt engelli bloktaysa red (fail-closed).
+- Engelli bloklar: RFC 1918, loopback, link-local/metadata, CGNAT, TEST-NET, multicast,
+  `0.0.0.0`, `::`, `::1`, `fc00::/7`, `fe80::/10`. IPv4-mapped IPv6 açılarak denetlenir.
+- Temizleyiciler (`sanitize_domain`, `sanitize_hostname`, `sanitize_irc_token`,
+  `sanitize_channel`, `mask_secret`): uzunluklar kod noktasıdır; "alfanümerik" = `[\p{L}\p{N}]`.
 
-## 13. Rapor ve uyarı (R6)
+## 13. Rapor ve uyarı
 
-- **Rapor** (`fixtures/report/cases.json`): Markdown/HTML Jinja2 şablonlarının (`autoescape=True`)
-  çıktısıyla bayt bayt aynı; kaçış `& < > " '` → `&amp; &lt; &gt; &#34; &#39;`. Alan sınırları
-  (kod noktası): başlık 500, kapsam 1000, özet 20 000, bulgu ≤ 500 (başlık 500, açıklama 5000),
-  kaynak ≤ 500 × 1000. `generated_at` = `datetime.now(UTC).isoformat()`. CSV: Python `csv` excel
-  lehçesi (`\r\n`, QUOTE_MINIMAL), `= + - @ \t \r` ile başlayan dize hücresinin başına `'`;
-  başlık ilk satırın anahtarları (≤ 50), ≤ 10 000 satır; dosya yalnızca `output_dir` altına.
-- **Uyarı** (`fixtures/alert/cases.json`): içerik (ilk 50 000) ve başlık (ilk 2000) kesilip küçültülür;
-  sorgu metni kırpılıp küçültülür ve 500'e kesilir; alt-dize eşleşmesi; ≤ 100 sorgu. Anomali:
-  popülasyon standart sapması, `|z| > eşik`; sapma 0 iken farklı değer → `z_score = null`; ısınma
-  `min_samples`; yeni değer tabana önce katılmaz. Ayar sınırları: pencere 10–10 000, eşik 0,5–10,
-  ısınma 5–1000.
+- **Rapor** (`crates/osiris-report`, `fixtures/report/cases.json`): Markdown/HTML çıktısı, kaçışlı
+  (`autoescape`) Jinja2 şablonlarının çıktısıyla bayt bayt aynıdır; kaçış `& < > " '` →
+  `&amp; &lt; &gt; &#34; &#39;`. Alan sınırları (kod noktası): başlık 500, kapsam 1 000, özet
+  20 000, bulgu ≤ 500 (başlık 500, açıklama 5 000), kaynak ≤ 500 × 1 000. `generated_at` UTC ISO
+  8601. CSV: excel lehçesi (`\r\n`, gerektiğinde tırnak), `= + - @ \t \r` ile başlayan dize
+  hücresinin başına `'`; başlık ilk satırın anahtarları (≤ 50), ≤ 10 000 satır; dosya yalnızca
+  `output_dir` altına yazılır.
+- **Uyarı eşleşmesi** (`crates/osiris-alert`, `fixtures/alert/cases.json`): içerik (ilk 50 000) ve
+  başlık (ilk 2 000) kesilip küçük harfe çevrilir; kural metni kırpılıp küçük harfe çevrilir ve
+  500'e kesilir; alt dize eşleşmesi; öğe başına ≤ 100 kural. Anomali: popülasyon standart sapması,
+  `|z| > eşik`; sapma 0 iken farklı değer → `z_score = null`; ısınma `min_samples`; yeni değer
+  tabana önce katılmaz. Ayar sınırları: pencere 10–10 000, eşik 0,5–10, ısınma 5–1 000.
