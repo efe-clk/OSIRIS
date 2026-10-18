@@ -43,6 +43,7 @@ impl Modify for Security {
         recent_items, item_detail, top_entities, collect_batch, collect, search, entity_search,
         graph, graph_add, list_sources, create_source, delete_source, collect_source,
         list_saved_queries, create_saved_query, delete_saved_query, test_alerts, report_markdown,
+        semantic_search, graph_analysis, graph_export, get_source, update_source, report_generate,
         delete_item, erase_entity, run_retention
     ),
     modifiers(&Security),

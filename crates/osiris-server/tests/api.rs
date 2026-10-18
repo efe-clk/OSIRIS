@@ -76,7 +76,13 @@ async fn saglik_ve_bilinmeyen_rotalar() {
     let (s, b) = call(&a, "GET", "/openapi.json", &[], None).await;
     assert_eq!(s, StatusCode::OK);
     assert!(b["paths"]["/sources/{source_id}/collect"]["post"].is_object(), "{b}");
-    assert_eq!(b["paths"].as_object().unwrap().len(), 24);
+    assert_eq!(b["paths"].as_object().unwrap().len(), 28);
+    // Web arayüzü uçları belgede
+    assert!(b["paths"]["/sources/{source_id}"]["patch"].is_object(), "{b}");
+    assert!(b["paths"]["/sources/{source_id}"]["get"].is_object(), "{b}");
+    for p in ["/search/semantic", "/graph/analysis", "/graph/export", "/reports/generate"] {
+        assert!(b["paths"][p].is_object(), "{p} yok");
+    }
 }
 
 #[tokio::test]
@@ -249,4 +255,123 @@ async fn cors_izin_listesi() {
     assert_eq!(ok.headers()[header::ACCESS_CONTROL_MAX_AGE], "600");
     let no = a.oneshot(req("https://kotu.example")).await.unwrap();
     assert!(no.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
+}
+
+#[tokio::test]
+async fn web_arayuzu_uclari_dogrulama_ve_rbac() {
+    let a = app();
+    let viewer = bearer("viewer");
+    let analyst = bearer("analyst");
+    let v = [("authorization", viewer.as_str())];
+    let an = [("authorization", analyst.as_str())];
+    let sid = "12345678-1234-1234-1234-123456789abc";
+    let path = format!("/sources/{sid}");
+    // PATCH: rol → gövde (422) → kimlik (404) → boş alan (422) → boyut (413)
+    let (s, _) = call(&a, "PATCH", &path, &v, Some(r#"{"enabled":true}"#)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = call(&a, "PATCH", &path, &an, Some("{}")).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, _) = call(&a, "PATCH", &path, &an, Some(r#"{"priority":11}"#)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, b) = call(&a, "PATCH", &path, &an, Some(r#"{"enabled":null}"#)).await;
+    assert_eq!(
+        (s, b["detail"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("enabled boş olamaz"))
+    );
+    let (s, _) = call(&a, "PATCH", "/sources/bozuk", &an, Some(r#"{"enabled":true}"#)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let big = format!(r#"{{"config":{{"k":"{}"}}}}"#, "x".repeat(21_000));
+    let (s, _) = call(&a, "PATCH", &path, &an, Some(&big)).await;
+    assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE);
+    let (s, _) = call(&a, "GET", "/sources/bozuk", &v, None).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    // Semantik arama: model yoksa 503 (doğrulama önce)
+    let (s, _) = call(&a, "POST", "/search/semantic", &v, Some(r#"{"query":""}"#)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, b) = call(&a, "POST", "/search/semantic", &v, Some(r#"{"query":"fidye"}"#)).await;
+    assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(b["detail"].as_str().unwrap().contains("OSIRIS_EMBEDDING_MODEL"));
+}
+
+#[tokio::test]
+async fn graf_analizi_ve_disa_aktarim() {
+    let a = app();
+    let analyst = bearer("analyst");
+    let h = [("authorization", analyst.as_str())];
+    for (s, t) in [("ali", "a.com"), ("ali", "b.com"), ("ali", "c.com"), ("x", "y")] {
+        let body = json!({"source": s, "target": t, "relation_type": "r"}).to_string();
+        let (st, _) = call(&a, "POST", "/graph/relation", &h, Some(&body)).await;
+        assert_eq!(st, StatusCode::OK);
+    }
+    let (s, g) = call(&a, "GET", "/graph/analysis?top=2&node=ali", &h, None).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!((g["nodes"].as_u64(), g["edges"].as_u64()), (Some(6), Some(4)));
+    assert_eq!(g["centrality"][0]["id"], "ali");
+    assert_eq!(g["centrality"][0]["degree"], 3);
+    assert_eq!(g["centrality"].as_array().unwrap().len(), 2);
+    let sizes: Vec<u64> =
+        g["communities"].as_array().unwrap().iter().map(|c| c["size"].as_u64().unwrap()).collect();
+    assert_eq!(sizes, [4, 2]);
+    assert_eq!(g["neighbors"], json!(["a.com", "b.com", "c.com"]));
+    let (_, g) = call(&a, "GET", "/graph/analysis", &h, None).await;
+    assert!(g["neighbors"].is_null());
+    for (fmt, marker) in [("graphml", "<graphml"), ("gexf", "<gexf")] {
+        let req = Request::builder()
+            .uri(format!("/graph/export?format={fmt}"))
+            .header("authorization", analyst.as_str())
+            .body(Body::empty())
+            .unwrap();
+        let resp = a.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let cd = resp.headers()[header::CONTENT_DISPOSITION].to_str().unwrap().to_owned();
+        assert!(cd.contains(&format!("osiris-graf.{fmt}")));
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        assert!(String::from_utf8_lossy(&bytes).contains(marker));
+    }
+    let (s, _) = call(&a, "GET", "/graph/export?format=pdf", &h, None).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn cok_bicimli_rapor() {
+    let a = app();
+    let analyst = bearer("analyst");
+    let h = [("authorization", analyst.as_str())];
+    let base = json!({
+        "title": "Vaka <1>", "scope": "S", "summary": "O",
+        "findings": [{"title": "<script>x</script>", "description": "d"}],
+        "sources": ["https://k"],
+        "entities": [{"type": "ip", "value": "1.2.3.4"}, {"type": "person", "value": "Ali"}],
+    });
+    let body_for = |fmt: &str| {
+        let mut b = base.clone();
+        b["format"] = json!(fmt);
+        b.to_string()
+    };
+    let (s, md) = call(&a, "POST", "/reports/generate", &h, Some(&body_for("markdown"))).await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(md["content"].as_str().unwrap().starts_with("# Vaka"));
+    assert_eq!(md["filename"], "Vaka-1.md");
+    let (_, html) = call(&a, "POST", "/reports/generate", &h, Some(&body_for("html"))).await;
+    let c = html["content"].as_str().unwrap();
+    assert!(c.contains("&lt;script&gt;") && !c.contains("<script>x"));
+    assert_eq!(html["media_type"], "text/html");
+    let (_, js) = call(&a, "POST", "/reports/generate", &h, Some(&body_for("json"))).await;
+    let js: Value = serde_json::from_str(js["content"].as_str().unwrap()).unwrap();
+    assert_eq!(js["entities"][0], json!({"type": "ip", "value": "1.2.3.4"}));
+    assert_eq!(js["sources"], json!(["https://k"]));
+    let (_, stix) = call(&a, "POST", "/reports/generate", &h, Some(&body_for("stix"))).await;
+    let stix: Value = serde_json::from_str(stix["content"].as_str().unwrap()).unwrap();
+    let kinds: Vec<&str> =
+        stix["objects"].as_array().unwrap().iter().map(|o| o["type"].as_str().unwrap()).collect();
+    assert_eq!((stix["type"].as_str(), kinds), (Some("bundle"), vec!["identity", "indicator"]));
+    let (s, _) = call(&a, "POST", "/reports/generate", &h, Some(&body_for("pdf"))).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let tr = json!({"title": "Dış yüzey ŞİRKET"}).to_string();
+    let (_, out) = call(&a, "POST", "/reports/generate", &h, Some(&tr)).await;
+    assert_eq!(out["filename"], "Dis-yuzey-SIRKET.md");
+    let viewer = bearer("viewer");
+    let (s, _) =
+        call(&a, "POST", "/reports/generate", &[("authorization", &viewer)], Some(&tr)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
 }

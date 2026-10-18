@@ -39,15 +39,19 @@ pub fn routes() -> Router<Shared> {
         .route("/collect/batch", post(collect_batch))
         .route("/search", post(search))
         .route("/search/entity", post(entity_search))
+        .route("/search/semantic", post(semantic_search))
         .route("/graph", get(graph))
         .route("/graph/relation", post(graph_add))
+        .route("/graph/analysis", get(graph_analysis))
+        .route("/graph/export", get(graph_export))
         .route("/sources", get(list_sources).post(create_source))
-        .route("/sources/{source_id}", delete(delete_source))
+        .route("/sources/{source_id}", get(get_source).patch(update_source).delete(delete_source))
         .route("/sources/{source_id}/collect", post(collect_source))
         .route("/saved-queries", get(list_saved_queries).post(create_saved_query))
         .route("/saved-queries/{query_id}", delete(delete_saved_query))
         .route("/alerts/test", post(test_alerts))
         .route("/reports/markdown", post(report_markdown))
+        .route("/reports/generate", post(report_generate))
         .route("/admin/retention/run", post(run_retention))
 }
 
@@ -406,6 +410,42 @@ pub struct CollectRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     config: Map<String, Value>,
+    /// true → toplanan öğelerin önizlemesi de döner (`results`, en çok 1000 öğe)
+    #[serde(default = "d_false")]
+    #[schema(value_type = bool, default = false)]
+    include_items: LaxBool,
+}
+
+/// `include_items` yanıt sınırları (DoS / yanıt boyutu korumaları).
+const PREVIEW_MAX_ITEMS: usize = 1000;
+const PREVIEW_MAX_CONTENT: usize = 500;
+
+/// Toplanan öğelerin kısaltılmış önizlemesi (ham içerik en çok 500 kod noktası).
+fn item_previews(items: &[osiris_types::CollectedItem]) -> Value {
+    Value::Array(
+        items
+            .iter()
+            .take(PREVIEW_MAX_ITEMS)
+            .map(|it| {
+                json!({
+                    "url": it.url,
+                    "title": it.title,
+                    "snippet": chars(&it.raw_content, PREVIEW_MAX_CONTENT),
+                    "published_at": it.published_at,
+                    "metadata": it.metadata,
+                    "tags": it.tags,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn collect_out(result: &osiris_types::CollectionResult, include_items: bool) -> Value {
+    let mut out = json!({"items": result.items.len(), "metadata": result.metadata});
+    if include_items {
+        out["results"] = item_previews(&result.items);
+    }
+    out
 }
 
 impl Validate for CollectRequest {
@@ -496,7 +536,7 @@ pub async fn collect(
     }
     let detail = json!({"items": result.items.len()});
     st.audit(&ident.user, "collect", Some(&req.plugin_id), detail).await;
-    Ok(ok(json!({"items": result.items.len(), "metadata": result.metadata})))
+    Ok(ok(collect_out(&result, req.include_items.0)))
 }
 
 // ------------------------------------------------------------------------------- arama
@@ -822,15 +862,18 @@ pub async fn delete_source(
 }
 
 /// Kayıtlı kaynağı tek seferlik çalıştırır (sağlık takibi dahil).
+/// `?include_items=true` → toplanan öğelerin önizlemesi de döner.
 #[utoipa::path(post, path = "/sources/{source_id}/collect", tag = "Sources",
-    params(("source_id" = String, Path)),
+    params(("source_id" = String, Path), ("include_items" = Option<bool>, Query)),
     responses((status = 200), (status = 404), (status = 409, description = "Kaynak devre dışı"), (status = 502)))]
 pub async fn collect_source(
     State(st): State<Shared>,
     headers: HeaderMap,
     Path(source_id): Path<String>,
+    RawQuery(q): RawQuery,
 ) -> ApiResult<Response> {
     let ident = st.require(&headers, "analyst").await?;
+    let include_items = Params::from_raw(q.as_deref()).opt_bool("include_items")?.unwrap_or(false);
     let source_id = uuid_or_404(&source_id, "Kaynak")?;
     let row: Option<(String, Option<String>, bool, String)> = sqlx::query_as(
         "SELECT plugin_id, url, enabled, COALESCE(metadata, '{}'::jsonb)::text FROM sources \
@@ -866,7 +909,7 @@ pub async fn collect_source(
     }
     let detail = json!({"id": source_id, "items": result.items.len()});
     st.audit(&ident.user, "source.collect", Some(&plugin_id), detail).await;
-    Ok(ok(json!({"items": result.items.len(), "metadata": result.metadata})))
+    Ok(ok(collect_out(&result, include_items)))
 }
 
 // ---------------------------------------------------------------- kayıtlı sorgu / uyarı
@@ -1232,4 +1275,547 @@ pub async fn run_retention(State(st): State<Shared>, headers: HeaderMap) -> ApiR
     let res = json!({"items_deleted": items, "entities_deleted": entities, "default_days": days});
     st.audit(&ident.user, "retention.run", None, res.clone()).await;
     Ok(ok(res))
+}
+
+// ============================================================================
+// Web arayüzü uçları (E11 güncellemesi): kütüphanede hazır olan semantik arama, graf analizi
+// ve dışa aktarımı, çok biçimli rapor; kaynak detay/güncelleme.
+// ============================================================================
+
+/// `Option<Option<T>>` için: alan yok → None, `null` → Some(None), değer → Some(Some(v)).
+fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
+}
+
+/// Kaynak config'inde sır taşıyan anahtarlar: GET'te maskelenir, PATCH'te maske eski değeri korur.
+static SECRET_KEY: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)(api_key|access_token|token|password|secret)").expect("secret")
+});
+pub const SECRET_MASK: &str = "********";
+
+fn mask_secrets(config: &mut Map<String, Value>) {
+    for (k, v) in config.iter_mut() {
+        let empty = v.is_null() || v.as_str() == Some("");
+        if SECRET_KEY.is_match(k) && !empty {
+            *v = Value::String(SECRET_MASK.into());
+        }
+    }
+}
+
+/// Kaynak detayı: plugin config'i dahil; `api_key`, `token`, `password`, `secret` içeren
+/// alanlar `********` olarak döner.
+#[utoipa::path(get, path = "/sources/{source_id}", tag = "Sources",
+    params(("source_id" = String, Path)), responses((status = 200), (status = 404)))]
+pub async fn get_source(
+    State(st): State<Shared>,
+    headers: HeaderMap,
+    Path(source_id): Path<String>,
+) -> ApiResult<Response> {
+    st.require(&headers, "viewer").await?;
+    let source_id = uuid_or_404(&source_id, "Kaynak")?;
+    let fail = |e: &dyn std::fmt::Display| ApiError::internal("Kaynak okunamadı", e);
+    let row: Option<String> = sqlx::query_scalar(concat!(
+        "SELECT json_build_object('id', id::text, 'name', name, 'url', url, ",
+        "'network_type', network_type::text, 'plugin_id', plugin_id, 'schedule', schedule, ",
+        "'priority', priority, 'enabled', enabled, 'tags', tags, 'last_crawled_at', ",
+        ts!("last_crawled_at"),
+        ", 'last_success_at', ",
+        ts!("last_success_at"),
+        ", 'failure_count', failure_count, 'avg_response_ms', avg_response_ms, ",
+        "'retention_days', retention_days, 'created_at', ",
+        ts!("created_at"),
+        ", 'updated_at', ",
+        ts!("updated_at"),
+        ", 'config', COALESCE(metadata->'config', '{}'::jsonb))::text ",
+        "FROM sources WHERE id::text = $1"
+    ))
+    .bind(source_id)
+    .fetch_optional(&st.pool)
+    .await
+    .map_err(|e| fail(&e))?;
+    let text = row.ok_or_else(|| ApiError::not_found("Kaynak bulunamadı"))?;
+    let mut out: Value = serde_json::from_str(&text).map_err(|e| fail(&e))?;
+    if let Some(Value::Object(cfg)) = out.get_mut("config") {
+        mask_secrets(cfg);
+    } else {
+        out["config"] = json!({});
+    }
+    Ok(ok(out))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct SourceUpdateRequest {
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>)]
+    name: Option<Option<String>>,
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>)]
+    url: Option<Option<String>>,
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>)]
+    schedule: Option<Option<String>>,
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<i64>)]
+    priority: Option<Option<LaxInt>>,
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<bool>)]
+    enabled: Option<Option<LaxBool>>,
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<Vec<String>>)]
+    tags: Option<Option<Vec<String>>>,
+    /// Sığ birleştirme: verilen anahtarlar yazılır, `null` anahtarı siler, `********` eski
+    /// sırrı korur.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<Object>)]
+    config: Option<Option<Map<String, Value>>>,
+    /// `null` → sunucu varsayılanı, 0 → süreyle silinmez
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<i64>)]
+    retention_days: Option<Option<LaxInt>>,
+}
+
+impl Validate for SourceUpdateRequest {
+    fn validate(&self, v: &mut Violations) {
+        if let Some(Some(n)) = &self.name {
+            v.len("name", n, 1, 500);
+        }
+        if let Some(Some(u)) = &self.url {
+            v.len("url", u, 0, 2048);
+        }
+        if let Some(Some(s)) = &self.schedule {
+            v.len("schedule", s, 0, 100);
+        }
+        if let Some(Some(p)) = self.priority {
+            v.range("priority", p.0, 1, 10);
+        }
+        if let Some(Some(t)) = &self.tags {
+            v.items("tags", t.len(), 0, 20);
+        }
+        if let Some(Some(c)) = &self.config {
+            v.items("config", c.len(), 0, 50);
+        }
+        if let Some(Some(d)) = self.retention_days {
+            v.range("retention_days", d.0, 0, 36_500);
+        }
+    }
+}
+
+impl SourceUpdateRequest {
+    fn fields(&self) -> Vec<&'static str> {
+        let mut f = Vec::new();
+        let mut add = |present: bool, name: &'static str| {
+            if present {
+                f.push(name);
+            }
+        };
+        add(self.config.is_some(), "config");
+        add(self.enabled.is_some(), "enabled");
+        add(self.name.is_some(), "name");
+        add(self.priority.is_some(), "priority");
+        add(self.retention_days.is_some(), "retention_days");
+        add(self.schedule.is_some(), "schedule");
+        add(self.tags.is_some(), "tags");
+        add(self.url.is_some(), "url");
+        f
+    }
+}
+
+/// Kaynağı kısmen günceller: yalnızca gövdede verilen alanlar değişir (etkinleştir/kapat,
+/// zamanlama, öncelik, etiketler, config, saklama süresi).
+#[utoipa::path(patch, path = "/sources/{source_id}", tag = "Sources", request_body = SourceUpdateRequest,
+    params(("source_id" = String, Path)),
+    responses((status = 200), (status = 404), (status = 413), (status = 422)))]
+pub async fn update_source(
+    State(st): State<Shared>,
+    headers: HeaderMap,
+    Path(source_id): Path<String>,
+    Body(body): Body,
+) -> ApiResult<Response> {
+    let ident = st.require(&headers, "analyst").await?;
+    let req: SourceUpdateRequest = parse(body)?;
+    let source_id = uuid_or_404(&source_id, "Kaynak")?;
+    let fields = req.fields();
+    if fields.is_empty() {
+        return Err(ApiError::unprocessable("Güncellenecek alan yok"));
+    }
+    for (name, null) in [
+        ("name", matches!(req.name, Some(None))),
+        ("priority", matches!(req.priority, Some(None))),
+        ("enabled", matches!(req.enabled, Some(None))),
+    ] {
+        if null {
+            return Err(ApiError::unprocessable(format!("{name} boş olamaz")));
+        }
+    }
+    if let Some(Some(c)) = &req.config
+        && config_too_big(c)
+    {
+        return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "config çok büyük"));
+    }
+    let res: Result<bool, sqlx::Error> = async {
+        let mut tx = st.pool.begin().await?;
+        let meta: Option<String> = sqlx::query_scalar(
+            "SELECT COALESCE(metadata, '{}'::jsonb)::text FROM sources WHERE id::text = $1 FOR UPDATE",
+        )
+        .bind(source_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(meta) = meta else {
+            return Ok(false);
+        };
+        // Sütun adları yalnızca bu sabit parçalardan gelir; değerler bağlı parametredir.
+        let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new("UPDATE sources SET updated_at = NOW()");
+        if let Some(Some(n)) = &req.name {
+            qb.push(", name = ").push_bind(n.clone());
+        }
+        if let Some(u) = &req.url {
+            qb.push(", url = NULLIF(").push_bind(u.clone().unwrap_or_default()).push(", '')");
+        }
+        if let Some(s) = &req.schedule {
+            qb.push(", schedule = NULLIF(").push_bind(s.clone().unwrap_or_default()).push(", '')");
+        }
+        if let Some(Some(p)) = req.priority {
+            qb.push(", priority = ").push_bind(p.0 as i32);
+        }
+        if let Some(Some(e)) = req.enabled {
+            qb.push(", enabled = ").push_bind(e.0);
+        }
+        if let Some(t) = &req.tags {
+            let tags: Vec<String> =
+                t.iter().flatten().take(20).map(|x| chars(x, 100)).collect();
+            qb.push(", tags = ").push_bind(tags);
+        }
+        if let Some(d) = req.retention_days {
+            qb.push(", retention_days = ").push_bind(d.map(|x| x.0 as i32));
+        }
+        if let Some(c) = &req.config {
+            let mut meta: Value = serde_json::from_str(&meta).unwrap_or_else(|_| json!({}));
+            if !meta.is_object() {
+                meta = json!({});
+            }
+            let mut cfg = meta.get("config").and_then(Value::as_object).cloned().unwrap_or_default();
+            for (k, v) in c.iter().flatten() {
+                if v.is_null() {
+                    cfg.remove(k);
+                } else if v.as_str() != Some(SECRET_MASK) {
+                    cfg.insert(chars(k, 100), v.clone());
+                }
+            }
+            meta["config"] = Value::Object(cfg);
+            qb.push(", metadata = ").push_bind(meta.to_string()).push("::jsonb");
+        }
+        qb.push(" WHERE id::text = ").push_bind(source_id);
+        qb.build().execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(true)
+    }
+    .await;
+    let found = res.map_err(|e| ApiError::internal("Kaynak güncellenemedi", e))?;
+    if !found {
+        return Err(ApiError::not_found("Kaynak bulunamadı"));
+    }
+    let detail = json!({"id": source_id, "fields": fields});
+    st.audit(&ident.user, "source.update", None, detail).await;
+    Ok(ok(json!({"status": "updated"})))
+}
+
+// ------------------------------------------------------------------------ semantik arama
+
+/// Anlamca yakın öğeler (`similarity` 0–1). Sorgu vektörünü API üretir: `OSIRIS_EMBEDDING_MODEL`
+/// ve modeller (`osiris-server models`) yoksa 503.
+#[utoipa::path(post, path = "/search/semantic", tag = "Search", request_body = SearchRequest,
+    responses((status = 200), (status = 400), (status = 503, description = "Model yapılandırılmamış")))]
+pub async fn semantic_search(
+    State(st): State<Shared>,
+    headers: HeaderMap,
+    Body(body): Body,
+) -> ApiResult<Response> {
+    let ident = st.require(&headers, "viewer").await?;
+    let req: SearchRequest = parse(body)?;
+    let Some(model) = st.embedder().await else {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Semantik arama yapılandırılmamış: OSIRIS_EMBEDDING_MODEL ve modeller (osiris-server models) gerekli",
+        ));
+    };
+    let text = req.query.clone();
+    let vec = tokio::task::spawn_blocking(move || model.embed(&text))
+        .await
+        .map_err(|e| ApiError::internal("Sorgu vektörü üretilemedi", e))?
+        .ok_or_else(|| ApiError::internal("Sorgu vektörü üretilemedi", "boş vektör"))?;
+    let vec: Vec<f64> = vec.into_iter().map(f64::from).collect();
+    let rows = osiris_query::semantic_search(&st.pool, &vec, req.limit.0)
+        .await
+        .map_err(query_error("Arama başarısız"))?;
+    let hits = osiris_query::count_rows(&rows);
+    let detail = json!({"query": chars(&req.query, 200), "hits": hits});
+    st.audit(&ident.user, "search.semantic", None, detail).await;
+    Ok(raw_json(rows))
+}
+
+// ------------------------------------------------------------------- graf analizi / dışa aktarım
+
+/// Topluluk tespiti (CNM) büyük graflarda pahalıdır; üstünde yalnızca merkezilik döner.
+const COMMUNITY_MAX_NODES: usize = 5000;
+
+/// Derece merkeziliği (ilk `top`, 1-200), CNM toplulukları (en büyük 50, üye ≤ 200; ≤ 5000
+/// düğümde) ve `node` verilirse komşular. Bkz. SOZLESME §9.
+#[utoipa::path(get, path = "/graph/analysis", tag = "Graph",
+    params(("top" = Option<i64>, Query), ("node" = Option<String>, Query)), responses((status = 200)))]
+pub async fn graph_analysis(
+    State(st): State<Shared>,
+    headers: HeaderMap,
+    RawQuery(q): RawQuery,
+) -> ApiResult<Response> {
+    st.require(&headers, "viewer").await?;
+    let p = Params::from_raw(q.as_deref());
+    let top = p.int("top", 25)?.clamp(1, 200) as usize;
+    let node = p.get("node").map(|n| chars(n, 500));
+    // Kopya üzerinde hesapla: kilit kısa tutulur, CPU işi async çalışanı bloklamaz
+    let graph = st.graph().await.graph.clone();
+    let out = tokio::task::spawn_blocking(move || {
+        let n = graph.number_of_nodes();
+        let mut cent: Vec<(String, f64)> = graph.centrality().into_iter().collect();
+        cent.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let centrality: Vec<Value> = cent
+            .into_iter()
+            .take(top)
+            .map(|(id, score)| {
+                let degree = graph.neighbors(&id).len();
+                json!({"id": id, "score": (score * 1e6).round() / 1e6, "degree": degree})
+            })
+            .collect();
+        let communities = (n <= COMMUNITY_MAX_NODES).then(|| {
+            let mut cs: Vec<Vec<String>> = graph.communities();
+            for c in &mut cs {
+                c.sort();
+            }
+            cs.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.first().cmp(&b.first())));
+            cs.into_iter()
+                .take(50)
+                .map(|c| json!({"size": c.len(), "members": c.into_iter().take(200).collect::<Vec<_>>()}))
+                .collect::<Vec<_>>()
+        });
+        let neighbors = node.map(|id| {
+            let mut nb = graph.neighbors(osiris_hash::py_strip(&id));
+            nb.sort();
+            nb.truncate(500);
+            nb
+        });
+        json!({
+            "nodes": n,
+            "edges": graph.number_of_edges(),
+            "centrality": centrality,
+            "communities": communities,
+            "neighbors": neighbors,
+        })
+    })
+    .await
+    .map_err(|e| ApiError::internal("Graf analizi başarısız", e))?;
+    Ok(ok(out))
+}
+
+/// Grafı GraphML ya da GEXF olarak dışa aktarır (`format` ∈ graphml|gexf; Gephi vb.).
+#[utoipa::path(get, path = "/graph/export", tag = "Graph",
+    params(("format" = Option<String>, Query)), responses((status = 200), (status = 400)))]
+pub async fn graph_export(
+    State(st): State<Shared>,
+    headers: HeaderMap,
+    RawQuery(q): RawQuery,
+) -> ApiResult<Response> {
+    st.require(&headers, "viewer").await?;
+    let p = Params::from_raw(q.as_deref());
+    let fmt = p.get("format").unwrap_or("graphml").to_ascii_lowercase();
+    if fmt != "graphml" && fmt != "gexf" {
+        return Err(ApiError::bad_request("format graphml veya gexf olmalı"));
+    }
+    let graph = st.graph().await.graph.clone();
+    let body = tokio::task::spawn_blocking(move || {
+        if fmt == "graphml" { (graph.graphml(), "graphml") } else { (graph.gexf(), "gexf") }
+    })
+    .await
+    .map_err(|e| ApiError::internal("Graf dışa aktarılamadı", e))?;
+    let disposition = format!("attachment; filename=\"osiris-graf.{}\"", body.1);
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/xml".to_owned()),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        body.0,
+    )
+        .into_response())
+}
+
+// ------------------------------------------------------------------ çok biçimli rapor
+
+fn d_markdown() -> String {
+    "markdown".into()
+}
+
+fn d_osiris() -> String {
+    "OSIRIS".into()
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ReportRequest {
+    title: String,
+    #[serde(default)]
+    scope: String,
+    #[serde(default)]
+    summary: String,
+    #[serde(default)]
+    #[schema(value_type = Vec<Object>)]
+    findings: Vec<Map<String, Value>>,
+    #[serde(default)]
+    sources: Vec<String>,
+    /// markdown | html | json | stix
+    #[serde(default = "d_markdown")]
+    format: String,
+    /// STIX/JSON göstergeleri: `[{"type": "ip", "value": "203.0.113.7"}]`
+    #[serde(default)]
+    #[schema(value_type = Vec<Object>)]
+    entities: Vec<Map<String, Value>>,
+    #[serde(default = "d_osiris")]
+    identity_name: String,
+}
+
+impl Validate for ReportRequest {
+    fn validate(&self, v: &mut Violations) {
+        v.len("title", &self.title, 1, 500);
+        v.len("scope", &self.scope, 0, 1000);
+        v.len("summary", &self.summary, 0, 20_000);
+        v.items("findings", self.findings.len(), 0, 500);
+        v.items("sources", self.sources.len(), 0, 500);
+        v.len("format", &self.format, 0, 16);
+        v.items("entities", self.entities.len(), 0, 500);
+        v.len("identity_name", &self.identity_name, 0, 200);
+    }
+}
+
+fn value_str(v: Option<&Value>) -> String {
+    match v {
+        None | Some(Value::Null) => String::new(),
+        Some(Value::String(s)) => s.clone(),
+        Some(other) => other.to_string(),
+    }
+}
+
+/// İndirme dosya adı: ASCII (Türkçe harfler sadeleşir: "Dış yüzey" → "Dis-yuzey").
+fn report_stem(title: &str) -> String {
+    let ascii: String = title
+        .chars()
+        .map(|c| match c {
+            'ı' | 'î' | 'í' | 'ì' | 'ï' => 'i',
+            'İ' | 'Î' | 'Í' => 'I',
+            'ş' | 'ș' => 's',
+            'Ş' | 'Ș' => 'S',
+            'ğ' => 'g',
+            'Ğ' => 'G',
+            'ü' | 'û' | 'ú' | 'ù' => 'u',
+            'Ü' | 'Û' | 'Ú' => 'U',
+            'ö' | 'ô' | 'ó' | 'ò' => 'o',
+            'Ö' | 'Ô' | 'Ó' => 'O',
+            'ç' => 'c',
+            'Ç' => 'C',
+            'â' | 'á' | 'à' | 'ä' => 'a',
+            'Â' | 'Á' | 'Ä' => 'A',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'É' | 'È' => 'E',
+            other => other,
+        })
+        .collect();
+    static NON_FILE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"[^A-Za-z0-9_-]+").expect("dosya"));
+    let stem = NON_FILE.replace_all(&ascii, "-");
+    let stem: String = stem.trim_matches('-').chars().take(60).collect();
+    if stem.is_empty() { "osiris-rapor".into() } else { stem }
+}
+
+/// Rapor üretir: `format` ∈ markdown|html|json|stix (gövdeyle döner, diske yazmaz).
+/// STIX yalnızca ip/domain/email/crypto_address/hash/cve göstergelerini içerir.
+#[utoipa::path(post, path = "/reports/generate", tag = "Reports", request_body = ReportRequest,
+    responses((status = 200), (status = 400)))]
+pub async fn report_generate(
+    State(st): State<Shared>,
+    headers: HeaderMap,
+    Body(body): Body,
+) -> ApiResult<Response> {
+    st.require(&headers, "analyst").await?;
+    let req: ReportRequest = parse(body)?;
+    let fmt = req.format.to_ascii_lowercase();
+    let (media, ext) = match fmt.as_str() {
+        "markdown" => ("text/markdown", "md"),
+        "html" => ("text/html", "html"),
+        "json" => ("application/json", "json"),
+        "stix" => ("application/stix+json", "stix.json"),
+        _ => return Err(ApiError::bad_request("format markdown, html, json veya stix olmalı")),
+    };
+    let entities: Vec<Value> = req
+        .entities
+        .iter()
+        .map(|e| {
+            json!({
+                "type": chars(&value_str(e.get("type")), 32),
+                "value": chars(&value_str(e.get("value")), 500),
+            })
+        })
+        .collect();
+    let content = match fmt.as_str() {
+        "markdown" | "html" => {
+            let findings: Vec<Json> =
+                req.findings.into_iter().map(|f| Json::from(Value::Object(f))).collect();
+            let sources: Vec<Json> = req.sources.into_iter().map(Json::Str).collect();
+            let input = osiris_report::ReportInput {
+                title: &req.title,
+                scope: &req.scope,
+                summary: &req.summary,
+                findings: &findings,
+                sources: &sources,
+            };
+            if fmt == "html" {
+                osiris_report::html(&input)
+            } else {
+                osiris_report::markdown(&input)
+            }
+        }
+        "json" => {
+            let findings: Vec<Value> = req
+                .findings
+                .iter()
+                .take(500)
+                .map(|f| {
+                    json!({
+                        "title": chars(&value_str(f.get("title")), 500),
+                        "description": chars(&value_str(f.get("description")), 5000),
+                    })
+                })
+                .collect();
+            let sources: Vec<String> =
+                req.sources.iter().take(500).map(|s| chars(s, 1000)).collect();
+            let data = json!({
+                "title": chars(&req.title, 500),
+                "generated_at": osiris_report::py_isoformat(chrono::Utc::now()),
+                "scope": req.scope,
+                "summary": req.summary,
+                "findings": findings,
+                "sources": sources,
+                "entities": entities,
+            });
+            osiris_report::json(&Json::from(data))
+        }
+        _ => {
+            let ents: Vec<Json> = entities.into_iter().map(Json::from).collect();
+            osiris_report::stix(&req.identity_name, &req.title, &ents, chrono::Utc::now(), None)
+                .map_err(|e| match e {
+                    osiris_report::ReportError::Invalid(m) => ApiError::bad_request(m),
+                    other => ApiError::internal("Rapor üretilemedi", other),
+                })?
+        }
+    };
+    let filename = format!("{}.{ext}", report_stem(&req.title));
+    Ok(ok(json!({"format": fmt, "media_type": media, "filename": filename, "content": content})))
 }

@@ -98,6 +98,8 @@ pub struct AppState {
     pub graph: tokio::sync::Mutex<GraphState>,
     pub metrics: metrics::Metrics,
     limiter: Option<DefaultKeyedRateLimiter<String>>,
+    /// Semantik arama sorgu vektörü için embedding modeli (ilk kullanımda yüklenir).
+    embedder: tokio::sync::OnceCell<Option<Arc<osiris_pipeline::embed::Embedder>>>,
 }
 
 pub type Shared = Arc<AppState>;
@@ -113,7 +115,39 @@ impl AppState {
             graph: tokio::sync::Mutex::new(GraphState { graph: Graph::default(), loaded: false }),
             metrics: metrics::Metrics::default(),
             limiter,
+            embedder: tokio::sync::OnceCell::new(),
         }
+    }
+
+    /// `OSIRIS_EMBEDDING_MODEL` + `$OSIRIS_MODEL_DIR` dosyalarıyla modeli bir kez yükler;
+    /// tanımsız ya da yüklenemezse None (uç 503 döner, API çalışmaya devam eder).
+    pub async fn embedder(&self) -> Option<Arc<osiris_pipeline::embed::Embedder>> {
+        self.embedder
+            .get_or_init(|| async {
+                let name = std::env::var("OSIRIS_EMBEDDING_MODEL")
+                    .ok()
+                    .filter(|m| !m.trim().is_empty())?;
+                let root = osiris_pipeline::model_dir();
+                match tokio::task::spawn_blocking(move || {
+                    osiris_pipeline::embed::Embedder::load(&root, name.trim())
+                })
+                .await
+                {
+                    Ok(Ok(e)) => Some(Arc::new(e)),
+                    Ok(Err(e)) => {
+                        tracing::warn!(
+                            "Semantik arama kapalı: embedding modeli yüklenemedi: {e:#}"
+                        );
+                        None
+                    }
+                    Err(e) => {
+                        tracing::warn!("Semantik arama kapalı: {e}");
+                        None
+                    }
+                }
+            })
+            .await
+            .clone()
     }
 
     /// `_lookup_db_key`: özet eşleşmesi + `last_used_at`. DB hatası → kimlik yok.
@@ -261,7 +295,7 @@ fn cors(cfg: &Config) -> CorsLayer {
         cfg.cors_origins.iter().filter_map(|o| o.parse().ok()).collect();
     CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
-        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
         .allow_headers([
             header::CONTENT_TYPE,
             HeaderName::from_static("x-api-key"),
