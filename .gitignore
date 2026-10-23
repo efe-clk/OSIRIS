@@ -61,3 +61,6 @@ models/*
 
 # Rust
 /target/
+
+# graphify
+/graphify-out/
